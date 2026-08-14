@@ -3,7 +3,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.26-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-`aiw-client` is a robust, concurrent Go client library for the AIW conversational platform. Designed with **Hexagonal Architecture (Ports & Adapters)**, **Domain-Driven Design (DDD)**, and **SOLID clean code principles**, it cleanly isolates public API contracts (`pkg/`) from internal domain models and infrastructure adapters (`internal/`).
+`aiw-client` is a robust, concurrent Go client library for the AIW platform. Designed with **Hexagonal Architecture (Ports & Adapters)**, **Domain-Driven Design (DDD)**, and **SOLID clean code principles**, it cleanly isolates public API contracts (`pkg/`) from internal domain models and infrastructure adapters (`internal/`).
 
 ---
 
@@ -166,6 +166,23 @@ client, err := aiw.NewClientBuilder().
     WithTimeout(20 * time.Second).
     Build()
 ```
+
+### Interactive CLI / Shell Chat
+
+An interactive terminal chat application is included in `examples/conversation`:
+
+```bash
+# Run against live AIW platform with PAT token
+go run ./examples/conversation -token "your-pat-token" -tenant "default" -model "RocchettoEmbeddingsV2"
+
+# Run offline in mock mode
+go run ./examples/conversation -mock
+```
+
+Commands available during the chat session:
+- `/help` — Display session details and available commands.
+- `/clear` — Clear the terminal screen.
+- `/exit` or `exit` — Gracefully terminate the conversation session and exit.
 
 ---
 
