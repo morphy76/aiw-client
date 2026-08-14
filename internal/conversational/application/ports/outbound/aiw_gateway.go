@@ -1,0 +1,41 @@
+package outbound
+
+import (
+	"context"
+
+	"github.com/morphy76/aiw-client/internal/conversational/application/ports/inbound"
+)
+
+// StreamEventHandler handles events dispatched from the real-time conversational SSE stream.
+type StreamEventHandler interface {
+	// OnCreated is called when lifecycle.event == "created" is received with the assigned dialog ID.
+	OnCreated(dialogID string) error
+
+	// OnCustomerMessage is called when message.event == "messageAdded" with role "CUSTOMER" is received.
+	OnCustomerMessage(text string) error
+
+	// OnBotMessage is called when message.event == "messageAdded" with role "BOT" or "AGENT" is received.
+	OnBotMessage(text string) error
+
+	// OnAborted is called when lifecycle.event == "aborted" is received.
+	OnAborted(reason string)
+
+	// OnClosed is called when lifecycle.event == "closed" or stream termination occurs.
+	OnClosed()
+
+	// OnError is called on stream or parsing errors.
+	OnError(err error)
+}
+
+// AIWGateway defines the external network/streaming contract to the AIW platform.
+type AIWGateway interface {
+	// OpenSessionStream opens an SSE stream with the AIW platform, waits for the initial created event,
+	// and routes real-time events to the provided StreamEventHandler.
+	OpenSessionStream(ctx context.Context, cmd inbound.OpenConversationCommand, handler StreamEventHandler) error
+
+	// SendCustomerMessage transmits a customer message payload to POST /dialog/api/conversation/v1.0/message/{dialogId}.
+	SendCustomerMessage(ctx context.Context, cmd inbound.AddCustomerMessageCommand, dialogID string) error
+
+	// CloseSession sends a DELETE request to /dialog/api/conversation/v1.0/{externalId}/{dialogId}.
+	CloseSession(ctx context.Context, cmd inbound.CloseConversationCommand, dialogID string) error
+}
