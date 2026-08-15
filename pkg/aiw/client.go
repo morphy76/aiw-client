@@ -1,10 +1,16 @@
 package aiw
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/rs/zerolog"
 )
+
+// HTTPClient defines the standard interface for executing HTTP requests.
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 // Client is the main AIW facade interface exposing conversational and platform services.
 type Client interface {

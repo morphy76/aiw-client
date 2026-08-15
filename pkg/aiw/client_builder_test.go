@@ -39,15 +39,12 @@ func TestClientBuilder_NewBuilderAlias(t *testing.T) {
 	require.NotNil(t, client.Conversational())
 }
 
-func TestClientBuilder_WithConversationalService(t *testing.T) {
-	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK}, nil
-	})
+type dummyConversationalService struct {
+	aiw.ConversationalService
+}
 
-	mockSvc, err := aiw.NewConversationalServiceBuilder().
-		WithHTTPClient(clientMock).
-		Build()
-	require.NoError(t, err)
+func TestClientBuilder_WithConversationalService(t *testing.T) {
+	mockSvc := &dummyConversationalService{}
 
 	client, err := aiw.NewClientBuilder().
 		WithConversationalService(mockSvc).
@@ -59,28 +56,6 @@ func TestClientBuilder_WithConversationalService(t *testing.T) {
 	}()
 
 	assert.Same(t, mockSvc, client.Conversational())
-}
-
-func TestClientBuilder_WithConversationalServiceBuilder(t *testing.T) {
-	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK}, nil
-	})
-
-	convBuilder := aiw.NewConversationalServiceBuilder().
-		WithHTTPClient(clientMock).
-		WithTimeout(10 * time.Second)
-
-	client, err := aiw.NewClientBuilder().
-		WithConversationalServiceBuilder(convBuilder).
-		WithTimeout(15 * time.Second).
-		Build()
-	require.NoError(t, err)
-	require.NotNil(t, client)
-	defer func() {
-		require.NoError(t, client.Close())
-	}()
-
-	require.NotNil(t, client.Conversational())
 }
 
 func TestClientBuilder_WithCustomDependenciesAndFlow(t *testing.T) {

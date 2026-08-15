@@ -21,7 +21,6 @@ type ConversationalContextBuilder struct {
 	dialogModel string
 	bearerToken string
 	sandbox     bool
-	baseURL     string
 	headers     map[string]string
 }
 
@@ -81,12 +80,6 @@ func (b *ConversationalContextBuilder) WithSandbox(sandbox bool) *Conversational
 	return b
 }
 
-// WithBaseURL sets a custom endpoint base URL.
-func (b *ConversationalContextBuilder) WithBaseURL(baseURL string) *ConversationalContextBuilder {
-	b.baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	return b
-}
-
 // WithHeader adds a custom HTTP header.
 func (b *ConversationalContextBuilder) WithHeader(key, value string) *ConversationalContextBuilder {
 	if b.headers == nil {
@@ -132,7 +125,6 @@ func (b *ConversationalContextBuilder) Build() (ConversationalContext, error) {
 		dialogModel: b.dialogModel,
 		bearerToken: b.bearerToken,
 		sandbox:     b.sandbox,
-		baseURL:     b.baseURL,
 		headers:     headersCopy,
 	}, nil
 }

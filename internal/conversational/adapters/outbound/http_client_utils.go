@@ -19,14 +19,14 @@ const (
 	defaultDialogSessionWithRecordingDataEndpoint = "/dialog/api/dialogSession/v1.0/_withRecordingData"
 )
 
-func resolveBaseURL(customURL, defaultBaseURL string) string {
-	if customURL != "" {
-		return strings.TrimRight(customURL, "/")
+const defaultAPIBaseURL = "https://dev.lab.aiwave.io"
+
+func normalizeBaseURL(baseURL string) string {
+	cleaned := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if cleaned == "" {
+		return defaultAPIBaseURL
 	}
-	if defaultBaseURL != "" {
-		return strings.TrimRight(defaultBaseURL, "/")
-	}
-	return "https://dev.lab.aiwave.io"
+	return cleaned
 }
 
 func applyHeaders(

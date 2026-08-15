@@ -258,7 +258,6 @@ func main() {
 			WithDialogModel(cfg.DialogModel).
 			WithBearerToken(cfg.BearerToken).
 			WithSandbox(cfg.Sandbox).
-			WithBaseURL(cfg.BaseURL).
 			Build()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to build ConversationalContext: %v\n", err)
@@ -387,7 +386,6 @@ func promptListAndSelectSession(
 		WithExternalID(filterExternalID).
 		WithTenant(cfg.Tenant).
 		WithBearerToken(cfg.BearerToken).
-		WithBaseURL(cfg.BaseURL).
 		WithDialogModel(cfg.DialogModel).
 		WithSandbox(cfg.Sandbox).
 		Build()

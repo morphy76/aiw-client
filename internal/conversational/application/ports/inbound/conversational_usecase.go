@@ -23,7 +23,6 @@ type OpenConversationCommand struct {
 	DialogModel string
 	BearerToken string
 	Sandbox     bool
-	BaseURL     string
 	Headers     map[string]string
 }
 
@@ -35,7 +34,6 @@ type AddCustomerMessageCommand struct {
 	Tenant      string
 	BearerToken string
 	Sandbox     bool
-	BaseURL     string
 	Headers     map[string]string
 }
 
@@ -45,7 +43,6 @@ type CloseConversationCommand struct {
 	Tenant      string
 	BearerToken string
 	Sandbox     bool
-	BaseURL     string
 	Headers     map[string]string
 }
 
@@ -60,7 +57,6 @@ type ListSessionsCommand struct {
 	Tenant        string
 	BearerToken   string
 	Sandbox       bool
-	BaseURL       string
 	Headers       map[string]string
 }
 
@@ -71,7 +67,6 @@ type RestoreConversationCommand struct {
 	Tenant      string
 	BearerToken string
 	Sandbox     bool
-	BaseURL     string
 	Headers     map[string]string
 }
 

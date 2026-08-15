@@ -23,7 +23,6 @@ func TestConversationalContextBuilder_Build(t *testing.T) {
 			WithDialogModel("RocchettoEmbeddingsV2").
 			WithBearerToken("secret-pat-token").
 			WithSandbox(true).
-			WithBaseURL("https://dev.lab.aiwave.io").
 			WithHeader("X-Custom-Trace", "trace-777").
 			Build()
 
@@ -36,7 +35,6 @@ func TestConversationalContextBuilder_Build(t *testing.T) {
 		assert.Equal(t, "RocchettoEmbeddingsV2", convCtx.DialogModel())
 		assert.Equal(t, "secret-pat-token", convCtx.BearerToken())
 		assert.True(t, convCtx.Sandbox())
-		assert.Equal(t, "https://dev.lab.aiwave.io", convCtx.BaseURL())
 		assert.Equal(t, "live:customer-service", convCtx.CognitiveSystemHeader())
 		assert.Equal(t, "trace-777", convCtx.Headers()["X-Custom-Trace"])
 

@@ -73,7 +73,6 @@ func TestClient_LifecycleAndConversationalFlow(t *testing.T) {
 	convCtx, err := aiw.NewConversationalContextBuilder().
 		WithContext(ctx).
 		WithExternalID("cust-test-101").
-		WithBaseURL("https://dev.lab.aiwave.io").
 		Build()
 	require.NoError(t, err)
 	assert.Equal(t, "cust-test-101", convCtx.ExternalID())

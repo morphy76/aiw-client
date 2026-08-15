@@ -35,9 +35,6 @@ type ConversationalContext interface {
 	// Sandbox reports whether the session operates in sandbox mode.
 	Sandbox() bool
 
-	// BaseURL returns the custom base URL if configured.
-	BaseURL() string
-
 	// Headers returns a copy of additional HTTP headers configured for the session.
 	Headers() map[string]string
 
@@ -55,7 +52,6 @@ type conversationalContext struct {
 	dialogModel string
 	bearerToken string
 	sandbox     bool
-	baseURL     string
 	headers     map[string]string
 }
 
@@ -109,7 +105,6 @@ func (c *conversationalContext) WithDialogID(dialogID string) ConversationalCont
 		dialogModel: c.dialogModel,
 		bearerToken: c.bearerToken,
 		sandbox:     c.sandbox,
-		baseURL:     c.baseURL,
 		headers:     headersCopy,
 	}
 }
@@ -135,11 +130,6 @@ func (c *conversationalContext) BearerToken() string {
 // Sandbox returns whether sandbox mode is enabled.
 func (c *conversationalContext) Sandbox() bool {
 	return c.sandbox
-}
-
-// BaseURL returns the base URL.
-func (c *conversationalContext) BaseURL() string {
-	return c.baseURL
 }
 
 // Headers returns a copy of custom HTTP headers.

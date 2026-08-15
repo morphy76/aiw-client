@@ -23,11 +23,10 @@
 ```
 github.com/morphy76/aiw-client/
 ├── pkg/aiw/                              # Public API (Contracts, Facade, Builders, Context)
-│   ├── client.go                         # Main AIW Client Facade
+│   ├── client.go                         # Main AIW Client Facade & HTTPClient interface
 │   ├── client_builder.go                 # ClientBuilder (Facade Builder & DI)
 │   ├── conversational.go                 # ConversationalService & Callbacks (OnOpen, OnError, OnCustomerMessage, OnBotMessage, OnClose)
 │   ├── conversational_service.go         # Driving Adapter Implementation
-│   ├── conversational_service_builder.go # ConversationalServiceBuilder
 │   ├── context.go                        # ConversationalContext
 │   ├── context_builder.go                # ConversationalContextBuilder
 │   └── options.go                        # Client Configuration Options
@@ -44,7 +43,7 @@ github.com/morphy76/aiw-client/
         │   │   └── outbound/             # Driven Ports (ConversationRepository, AIWGateway)
         │   └── service/                  # Use Case Orchestration & Zerolog Logging
         └── adapters/
-            └── outbound/                 # Driven Adapters (HTTPGateway, InMemory ConversationRepo)
+            └── outbound/                 # Driven Adapters (HTTPGateway, LiveStreamClient, MessageClient, SessionClient, InMemory ConversationRepo)
 ```
 
 ---
@@ -52,7 +51,7 @@ github.com/morphy76/aiw-client/
 ## Features
 
 - **Facade Pattern & Fluent ClientBuilder**: Clean top-level entry point exposing conversational and platform services, constructed via `NewClientBuilder()` or functional options `New()`.
-- **Flexible Dependency Injection**: Inject custom `ConversationalService` implementations or pre-configured `ConversationalServiceBuilder` instances directly into the facade.
+- **Flexible Dependency Injection**: Inject custom `ConversationalService` mock implementations directly into the facade for seamless unit testing.
 - **SSE Stream Protocol**: Replicates full Server-Sent Events (SSE) protocol from the AIW platform (`/dialog/api/conversation/v1.0/live/${externalId}?with_dialog_model=${dialogModel}`), streaming events asynchronously and dispatching to registered callbacks.
 - **Conversation Restoration & History**: Restore past conversational turns and citation sources from AIW recording data (`/dialog/api/dialogSession/v1.0/_withRecordingData`).
 - **Session & Activity Listing**: List and paginate past user sessions and activities (`/dialog/api/dialogSession/v1.0/_fromFilter`).
@@ -63,7 +62,6 @@ github.com/morphy76/aiw-client/
   - `OnBotMessageFn`: Called when `message.event == "messageAdded"` with role `BOT` / `AGENT`.
   - `OnErrorFn`: Called upon network/stream failures, abort events (`lifecycle.event == "aborted"`), or callback errors.
   - `OnCloseFn`: Called when session closes (`lifecycle.event == "closed"`).
-- **Decoupled Service Builder**: `ConversationalServiceBuilder` to assemble conversational services with custom HTTP clients, timeouts, base URLs, and loggers without coupling the client facade to internal dependencies.
 - **Fluent Context Builder**: `ConversationalContextBuilder` to configure customer external ID, tenant (`x-cognitive-system`), target dialog model, bearer token (PAT), sandbox mode, and custom headers.
 - **Conversational Context**: Wraps standard Go `context.Context` (for timeout/cancellation propagation) with customer metadata (`ExternalID`) and thread-safe session tracking (`DialogID`).
 - **Hexagonal / DDD Structure**: Decoupled domain models, strict boundary interfaces, and swappable outbound adapters.
@@ -160,25 +158,19 @@ func main() {
 }
 ```
 
-### Dependency Injection with ClientBuilder
-
+### Dependency Injection & Custom Configuration with ClientBuilder
+ 
 ```go
-// Option A: Direct service injection
-customService, err := aiw.NewConversationalServiceBuilder().
-    WithHTTPClient(&http.Client{Timeout: 15 * time.Second}).
-    WithBaseURL("https://dev.lab.aiwave.io").
-    WithTimeout(20 * time.Second).
-    Build()
-
+// Option A: Client facade with custom base URL, HTTP client, and timeouts
 client, err := aiw.NewClientBuilder().
-    WithConversationalService(customService).
-    Build()
-
-// Option B: Builder-based service configuration
-client, err := aiw.NewClientBuilder().
-    WithBaseURL("https://dev.lab.aiwave.io").
+    WithBaseURL("https://portal.aiwave.ai").
     WithHTTPClient(customHTTPClient).
     WithTimeout(20 * time.Second).
+    Build()
+
+// Option B: Injecting a mock ConversationalService for unit testing
+client, err := aiw.NewClientBuilder().
+    WithConversationalService(mockService).
     Build()
 ```
 

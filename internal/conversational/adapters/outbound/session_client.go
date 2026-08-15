@@ -60,7 +60,7 @@ func NewSessionClient(client HTTPClient, baseURL string) *SessionClient {
 	}
 	return &SessionClient{
 		client:  client,
-		baseURL: strings.TrimRight(baseURL, "/"),
+		baseURL: normalizeBaseURL(baseURL),
 	}
 }
 
@@ -69,8 +69,6 @@ func (c *SessionClient) ListSessions(
 	ctx context.Context,
 	cmd inbound.ListSessionsCommand,
 ) ([]model.RecentActivity, error) {
-	targetBaseURL := resolveBaseURL(cmd.BaseURL, c.baseURL)
-
 	limit := cmd.Limit
 	if limit <= 0 {
 		limit = 10
@@ -102,7 +100,7 @@ func (c *SessionClient) ListSessions(
 		return nil, fmt.Errorf("failed to marshal filter dialog session payload: %w", err)
 	}
 
-	targetURL := fmt.Sprintf("%s%s", targetBaseURL, defaultDialogSessionFromFilterEndpoint)
+	targetURL := fmt.Sprintf("%s%s", c.baseURL, defaultDialogSessionFromFilterEndpoint)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -181,8 +179,6 @@ func (c *SessionClient) GetSessionRecording(
 	ctx context.Context,
 	cmd inbound.RestoreConversationCommand,
 ) ([]model.Message, error) {
-	targetBaseURL := resolveBaseURL(cmd.BaseURL, c.baseURL)
-
 	var sessionIDs []int64
 	if len(cmd.SessionIDs) > 0 {
 		sessionIDs = cmd.SessionIDs
@@ -205,7 +201,7 @@ func (c *SessionClient) GetSessionRecording(
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal filter dialog session payload: %w", err)
 		}
-		filterURL := fmt.Sprintf("%s%s", targetBaseURL, defaultDialogSessionFromFilterEndpoint)
+		filterURL := fmt.Sprintf("%s%s", c.baseURL, defaultDialogSessionFromFilterEndpoint)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, filterURL, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create list sessions request: %w", err)
@@ -236,7 +232,7 @@ func (c *SessionClient) GetSessionRecording(
 		return nil, nil
 	}
 
-	targetURL := fmt.Sprintf("%s%s", targetBaseURL, defaultDialogSessionWithRecordingDataEndpoint)
+	targetURL := fmt.Sprintf("%s%s", c.baseURL, defaultDialogSessionWithRecordingDataEndpoint)
 	bodyBytes, err := json.Marshal(sessionIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal session IDs: %w", err)

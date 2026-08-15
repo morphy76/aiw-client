@@ -7,6 +7,8 @@ import (
 
 	"github.com/rs/zerolog"
 
+	outboundAdapters "github.com/morphy76/aiw-client/internal/conversational/adapters/outbound"
+	appService "github.com/morphy76/aiw-client/internal/conversational/application/service"
 	"github.com/morphy76/aiw-client/internal/conversational/application/ports/inbound"
 	"github.com/morphy76/aiw-client/internal/conversational/domain/model"
 )
@@ -18,6 +20,14 @@ type callbackHolder struct {
 	onBotMessage      OnBotMessageFn
 	onClose           OnCloseFn
 	closeOnce         sync.Once
+}
+
+// newDefaultConversationalService creates a ready-to-use ConversationalService backed by the default HTTP gateway and in-memory repository.
+func newDefaultConversationalService(client HTTPClient, baseURL string) ConversationalService {
+	repo := outboundAdapters.NewInMemoryConversationRepository()
+	gateway := outboundAdapters.NewHTTPGateway(client, baseURL)
+	useCase := appService.NewConversationalService(repo, gateway)
+	return newConversationalServiceAdapter(useCase)
 }
 
 // conversationalServiceAdapter adapts inbound.ConversationalUseCase to ConversationalService.
@@ -136,7 +146,6 @@ func (a *conversationalServiceAdapter) OpenConversation(
 		DialogModel: ctx.DialogModel(),
 		BearerToken: ctx.BearerToken(),
 		Sandbox:     ctx.Sandbox(),
-		BaseURL:     ctx.BaseURL(),
 		Headers:     ctx.Headers(),
 	}, streamHandler)
 	if err != nil {
@@ -203,7 +212,6 @@ func (a *conversationalServiceAdapter) AddCustomerMessageWithOptions(
 		Tenant:      ctx.Tenant(),
 		BearerToken: ctx.BearerToken(),
 		Sandbox:     ctx.Sandbox(),
-		BaseURL:     ctx.BaseURL(),
 		Headers:     ctx.Headers(),
 	})
 	if err != nil {
@@ -241,7 +249,6 @@ func (a *conversationalServiceAdapter) CloseConversation(ctx ConversationalConte
 		Tenant:      ctx.Tenant(),
 		BearerToken: ctx.BearerToken(),
 		Sandbox:     ctx.Sandbox(),
-		BaseURL:     ctx.BaseURL(),
 		Headers:     ctx.Headers(),
 	}); err != nil {
 		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("failed to close conversation")
@@ -293,7 +300,6 @@ func (a *conversationalServiceAdapter) ListSessions(
 		Tenant:        ctx.Tenant(),
 		BearerToken:   ctx.BearerToken(),
 		Sandbox:       ctx.Sandbox(),
-		BaseURL:       ctx.BaseURL(),
 		Headers:       ctx.Headers(),
 	})
 	if err != nil {
@@ -333,7 +339,6 @@ func (a *conversationalServiceAdapter) RestoreConversation(ctx ConversationalCon
 		Tenant:      ctx.Tenant(),
 		BearerToken: ctx.BearerToken(),
 		Sandbox:     ctx.Sandbox(),
-		BaseURL:     ctx.BaseURL(),
 		Headers:     ctx.Headers(),
 	})
 	if err != nil {

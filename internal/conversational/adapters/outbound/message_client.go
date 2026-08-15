@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/morphy76/aiw-client/internal/conversational/application/ports/inbound"
 )
@@ -40,7 +39,7 @@ func NewMessageClient(client HTTPClient, baseURL string) *MessageClient {
 	}
 	return &MessageClient{
 		client:  client,
-		baseURL: strings.TrimRight(baseURL, "/"),
+		baseURL: normalizeBaseURL(baseURL),
 	}
 }
 
@@ -50,8 +49,7 @@ func (c *MessageClient) SendCustomerMessage(
 	cmd inbound.AddCustomerMessageCommand,
 	dialogID string,
 ) error {
-	targetBaseURL := resolveBaseURL(cmd.BaseURL, c.baseURL)
-	targetURL := fmt.Sprintf("%s%s/%s", targetBaseURL, defaultMessageEndpoint, url.PathEscape(dialogID))
+	targetURL := fmt.Sprintf("%s%s/%s", c.baseURL, defaultMessageEndpoint, url.PathEscape(dialogID))
 
 	var attachments []attachmentPayload
 	if len(cmd.Attachments) > 0 {
@@ -107,8 +105,7 @@ func (c *MessageClient) CloseSession(
 	cmd inbound.CloseConversationCommand,
 	dialogID string,
 ) error {
-	targetBaseURL := resolveBaseURL(cmd.BaseURL, c.baseURL)
-	targetURL := fmt.Sprintf("%s%s/%s/%s", targetBaseURL, defaultCloseEndpoint, url.PathEscape(cmd.ExternalID), url.PathEscape(dialogID))
+	targetURL := fmt.Sprintf("%s%s/%s/%s", c.baseURL, defaultCloseEndpoint, url.PathEscape(cmd.ExternalID), url.PathEscape(dialogID))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, targetURL, nil)
 	if err != nil {

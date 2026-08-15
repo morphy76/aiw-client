@@ -9,12 +9,11 @@ import (
 
 // ClientBuilder constructs and wires up the AIW Client facade and its underlying services.
 type ClientBuilder struct {
-	logger      zerolog.Logger
-	timeout     time.Duration
-	convSvc     ConversationalService
-	convBuilder *ConversationalServiceBuilder
-	httpClient  HTTPClient
-	baseURL     string
+	logger     zerolog.Logger
+	timeout    time.Duration
+	convSvc    ConversationalService
+	httpClient HTTPClient
+	baseURL    string
 }
 
 // NewClientBuilder creates a new ClientBuilder initialized with sensible defaults.
@@ -33,12 +32,6 @@ func NewBuilder() *ClientBuilder {
 // WithConversationalService injects a pre-constructed or custom ConversationalService directly.
 func (b *ClientBuilder) WithConversationalService(svc ConversationalService) *ClientBuilder {
 	b.convSvc = svc
-	return b
-}
-
-// WithConversationalServiceBuilder injects and configures a ConversationalServiceBuilder.
-func (b *ClientBuilder) WithConversationalServiceBuilder(builder *ConversationalServiceBuilder) *ClientBuilder {
-	b.convBuilder = builder
 	return b
 }
 
@@ -74,30 +67,7 @@ func (b *ClientBuilder) WithBaseURL(baseURL string) *ClientBuilder {
 func (b *ClientBuilder) Build() (Client, error) {
 	convSvc := b.convSvc
 	if convSvc == nil {
-		if b.convBuilder != nil {
-			var err error
-			convSvc, err = b.convBuilder.Build()
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			builder := NewConversationalServiceBuilder().
-				WithLogger(b.logger).
-				WithTimeout(b.timeout)
-
-			if b.httpClient != nil {
-				builder.WithHTTPClient(b.httpClient)
-			}
-			if b.baseURL != "" {
-				builder.WithBaseURL(b.baseURL)
-			}
-
-			var err error
-			convSvc, err = builder.Build()
-			if err != nil {
-				return nil, err
-			}
-		}
+		convSvc = newDefaultConversationalService(b.httpClient, b.baseURL)
 	}
 
 	return &clientFacade{

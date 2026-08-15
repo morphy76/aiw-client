@@ -33,11 +33,12 @@ func TestConversationalService_OnOpenErrorBubbling(t *testing.T) {
 		}, nil
 	})
 
-	convSvc, err := aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		WithBaseURL("https://dev.lab.aiwave.io").
 		Build()
 	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "ext-fail-open")
 
@@ -84,11 +85,12 @@ func TestConversationalService_CallbackPanicRecovery(t *testing.T) {
 		}, nil
 	})
 
-	convSvc, err := aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		WithBaseURL("https://dev.lab.aiwave.io").
 		Build()
 	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "ext-panic")
 
@@ -144,11 +146,12 @@ func TestConversationalService_OnBotMessageAndCustomerMessageFlow(t *testing.T) 
 		return &http.Response{StatusCode: http.StatusOK}, nil
 	})
 
-	convSvc, err := aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		WithBaseURL("https://dev.lab.aiwave.io").
 		Build()
 	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "ext-full-flow")
 
@@ -200,11 +203,12 @@ func TestConversationalService_OnBotMessagePanicRecovery(t *testing.T) {
 		}, nil
 	})
 
-	convSvc, err := aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		WithBaseURL("https://dev.lab.aiwave.io").
 		Build()
 	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "ext-panic-bot")
 
@@ -242,10 +246,11 @@ func TestConversationalService_AddCustomerMessageWithoutOpen(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK}, nil
 	})
 
-	convSvc, err := aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		Build()
 	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "ext-unopened")
 
@@ -258,10 +263,11 @@ func TestConversationalService_EmptyExternalID(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK}, nil
 	})
 
-	convSvc, err := aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		Build()
 	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "")
 
@@ -359,11 +365,12 @@ func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 	})
 
 	var err error
-	convSvc, err = aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		WithBaseURL("https://dev.lab.aiwave.io").
 		Build()
 	require.NoError(t, err)
+	convSvc = clientFacade.Conversational()
 
 	convCtx, err := aiw.NewConversationalContextBuilder().
 		WithExternalID("user-ext-999").
@@ -467,10 +474,11 @@ func TestConversationalService_ListSessions(t *testing.T) {
 		}, nil
 	})
 
-	convSvc, err := aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		Build()
 	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "user-456")
 	sessions, err := convSvc.ListSessions(convCtx, aiw.ListSessionsQuery{
@@ -505,10 +513,11 @@ func TestConversationalService_RestoreConversation(t *testing.T) {
 		}, nil
 	})
 
-	convSvc, err := aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		Build()
 	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "88")
 	messages, err := convSvc.RestoreConversation(convCtx)
@@ -553,10 +562,11 @@ func TestConversationalService_AddCustomerMessageWithOptions(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK}, nil
 	})
 
-	convSvc, err := aiw.NewConversationalServiceBuilder().
+	clientFacade, err := aiw.NewClientBuilder().
 		WithHTTPClient(client).
 		Build()
 	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "user-att-test")
 	err = convSvc.OpenConversation(convCtx, nil, nil, nil, nil, nil)

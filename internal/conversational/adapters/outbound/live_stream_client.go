@@ -43,7 +43,7 @@ func NewLiveStreamClient(client HTTPClient, baseURL string) *LiveStreamClient {
 	}
 	return &LiveStreamClient{
 		client:  client,
-		baseURL: strings.TrimRight(baseURL, "/"),
+		baseURL: normalizeBaseURL(baseURL),
 	}
 }
 
@@ -53,9 +53,7 @@ func (c *LiveStreamClient) OpenSessionStream(
 	cmd inbound.OpenConversationCommand,
 	handler outboundPorts.StreamEventHandler,
 ) error {
-	targetBaseURL := resolveBaseURL(cmd.BaseURL, c.baseURL)
-
-	targetURL := fmt.Sprintf("%s%s/%s", targetBaseURL, defaultLiveEndpoint, url.PathEscape(cmd.ExternalID))
+	targetURL := fmt.Sprintf("%s%s/%s", c.baseURL, defaultLiveEndpoint, url.PathEscape(cmd.ExternalID))
 	if cmd.DialogModel != "" {
 		targetURL = fmt.Sprintf("%s?with_dialog_model=%s", targetURL, url.QueryEscape(cmd.DialogModel))
 	}

@@ -207,14 +207,13 @@ func TestHTTPGateway_SendCustomerMessage(t *testing.T) {
 		}, nil
 	})
 
-	gw := outbound.NewHTTPGateway(client, "https://dev.lab.aiwave.io")
+	gw := outbound.NewHTTPGateway(client, "https://custom.aiwave.io")
 	cmd := inbound.AddCustomerMessageCommand{
 		ExternalID:  "ext-user-1",
 		Message:     "How do I reset my password?",
 		Tenant:      "customer-care",
 		BearerToken: "pat-tok-123",
 		Sandbox:     true,
-		BaseURL:     "https://custom.aiwave.io",
 		Headers: map[string]string{
 			"X-Custom-Trace": "trace-101",
 		},
