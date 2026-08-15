@@ -171,19 +171,28 @@ client, err := aiw.NewClientBuilder().
     Build()
 ```
 
-### Interactive CLI / Shell Chat
+### Examples
 
-An interactive terminal chat application is included in `examples/conversation`:
+The repository includes runnable, educational examples under `examples/`:
 
-```bash
-# Run against live AIW platform with PAT token
-go run ./examples/conversation -token "your-pat-token" -tenant "default" -model "RocchettoEmbeddingsV2"
-```
+1. **[Quickstart (`examples/quickstart`)](file:///Users/R.Pasquini/Projects/side/aiw-client/examples/quickstart/main.go)**:
+   Minimal, canonical example to initialize the client, build `ConversationalContext`, register reactive SSE callbacks, exchange messages, and close cleanly.
+   ```bash
+   PAT="your-pat-token" go run ./examples/quickstart
+   ```
 
-Commands available during the chat session:
-- `/help` — Display session details and available commands.
-- `/clear` — Clear the terminal screen.
-- `/exit` or `exit` — Gracefully terminate the conversation session and exit.
+2. **[Session Restore & Activity Listing (`examples/restore_session`)](file:///Users/R.Pasquini/Projects/side/aiw-client/examples/restore_session/main.go)**:
+   Demonstrates how to query past sessions (`ListSessions`) and restore historical turns and document citation sources (`RestoreConversation`).
+   ```bash
+   PAT="your-pat-token" go run ./examples/restore_session
+   ```
+
+3. **[Interactive CLI Chat (`examples/conversation`)](file:///Users/R.Pasquini/Projects/side/aiw-client/examples/conversation/main.go)**:
+   Full-featured terminal chat with interactive session selector (start new vs restore past session), real-time SSE streaming, and in-chat slash commands (`/history`, `/sessions`, `/help`, `/clear`, `/exit`).
+   ```bash
+   go run ./examples/conversation -token "your-pat-token" -tenant "almawave.com" -model "RocchettoEmbeddingsV2"
+   ```
+
 
 ---
 
