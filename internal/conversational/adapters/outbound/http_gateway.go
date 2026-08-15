@@ -70,25 +70,25 @@ type sessionRecordingDTO struct {
 	RecordingData string `json:"recordingData"`
 }
 
-// HTTPSSEGateway implements AIWGateway over HTTP and Server-Sent Events (SSE).
-type HTTPSSEGateway struct {
+// HTTPGateway implements AIWGateway over HTTP and Server-Sent Events (SSE).
+type HTTPGateway struct {
 	client  HTTPClient
 	baseURL string
 }
 
-// NewHTTPSSEGateway creates a new HTTPSSEGateway.
-func NewHTTPSSEGateway(client HTTPClient, baseURL string) *HTTPSSEGateway {
+// NewHTTPGateway creates a new HTTPGateway.
+func NewHTTPGateway(client HTTPClient, baseURL string) *HTTPGateway {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &HTTPSSEGateway{
+	return &HTTPGateway{
 		client:  client,
 		baseURL: strings.TrimRight(baseURL, "/"),
 	}
 }
 
 // OpenSessionStream initiates an SSE connection, awaits dialog creation, and processes SSE events in background.
-func (g *HTTPSSEGateway) OpenSessionStream(
+func (g *HTTPGateway) OpenSessionStream(
 	ctx context.Context,
 	cmd inbound.OpenConversationCommand,
 	handler outboundPorts.StreamEventHandler,
@@ -220,7 +220,7 @@ func (g *HTTPSSEGateway) OpenSessionStream(
 }
 
 // SendCustomerMessage sends POST /dialog/api/conversation/v1.0/message/{dialogId}.
-func (g *HTTPSSEGateway) SendCustomerMessage(
+func (g *HTTPGateway) SendCustomerMessage(
 	ctx context.Context,
 	cmd inbound.AddCustomerMessageCommand,
 	dialogID string,
@@ -277,7 +277,7 @@ func (g *HTTPSSEGateway) SendCustomerMessage(
 }
 
 // CloseSession sends DELETE /dialog/api/conversation/v1.0/{externalId}/{dialogId}.
-func (g *HTTPSSEGateway) CloseSession(
+func (g *HTTPGateway) CloseSession(
 	ctx context.Context,
 	cmd inbound.CloseConversationCommand,
 	dialogID string,
@@ -309,7 +309,7 @@ func (g *HTTPSSEGateway) CloseSession(
 }
 
 // ListSessions retrieves recent activity sessions for an external ID from /chat/sessions/{assistantName}.
-func (g *HTTPSSEGateway) ListSessions(
+func (g *HTTPGateway) ListSessions(
 	ctx context.Context,
 	cmd inbound.ListSessionsCommand,
 ) ([]model.RecentActivity, error) {
@@ -390,7 +390,7 @@ func (g *HTTPSSEGateway) ListSessions(
 }
 
 // GetSessionRecording retrieves past XML dialog recording data from /dialogSession/v1.0/_byExternalId/{externalId}.
-func (g *HTTPSSEGateway) GetSessionRecording(
+func (g *HTTPGateway) GetSessionRecording(
 	ctx context.Context,
 	cmd inbound.RestoreConversationCommand,
 ) ([]model.Message, error) {
@@ -435,7 +435,7 @@ func (g *HTTPSSEGateway) GetSessionRecording(
 	return allMessages, nil
 }
 
-func (g *HTTPSSEGateway) resolveBaseURL(customURL string) string {
+func (g *HTTPGateway) resolveBaseURL(customURL string) string {
 	if customURL != "" {
 		return strings.TrimRight(customURL, "/")
 	}
@@ -445,7 +445,7 @@ func (g *HTTPSSEGateway) resolveBaseURL(customURL string) string {
 	return "https://dev.lab.aiwave.io"
 }
 
-func (g *HTTPSSEGateway) applyHeaders(
+func (g *HTTPGateway) applyHeaders(
 	req *http.Request,
 	tenant string,
 	bearerToken string,

@@ -77,7 +77,7 @@ func (h *testStreamHandler) OnError(err error) {
 	h.errors = append(h.errors, err)
 }
 
-func TestHTTPSSEGateway_OpenSessionStream(t *testing.T) {
+func TestHTTPGateway_OpenSessionStream(t *testing.T) {
 	t.Run("successfully connects and processes SSE events", func(t *testing.T) {
 		var receivedHeaders http.Header
 		var receivedPath string
@@ -108,7 +108,7 @@ func TestHTTPSSEGateway_OpenSessionStream(t *testing.T) {
 			}, nil
 		})
 
-		gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+		gw := outbound.NewHTTPGateway(client, "https://dev.lab.aiwave.io")
 		handler := &testStreamHandler{}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -160,7 +160,7 @@ func TestHTTPSSEGateway_OpenSessionStream(t *testing.T) {
 			}, nil
 		})
 
-		gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+		gw := outbound.NewHTTPGateway(client, "https://dev.lab.aiwave.io")
 		handler := &testStreamHandler{}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -182,7 +182,7 @@ func TestHTTPSSEGateway_OpenSessionStream(t *testing.T) {
 	})
 }
 
-func TestHTTPSSEGateway_SendCustomerMessage(t *testing.T) {
+func TestHTTPGateway_SendCustomerMessage(t *testing.T) {
 	var receivedMethod string
 	var receivedPath string
 	var receivedHost string
@@ -207,7 +207,7 @@ func TestHTTPSSEGateway_SendCustomerMessage(t *testing.T) {
 		}, nil
 	})
 
-	gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+	gw := outbound.NewHTTPGateway(client, "https://dev.lab.aiwave.io")
 	cmd := inbound.AddCustomerMessageCommand{
 		ExternalID:  "ext-user-1",
 		Message:     "How do I reset my password?",
@@ -237,7 +237,7 @@ func TestHTTPSSEGateway_SendCustomerMessage(t *testing.T) {
 	assert.JSONEq(t, expectedBody, string(receivedBody))
 }
 
-func TestHTTPSSEGateway_SendCustomerMessageWithAttachments(t *testing.T) {
+func TestHTTPGateway_SendCustomerMessageWithAttachments(t *testing.T) {
 	var receivedBody []byte
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 		var err error
@@ -251,7 +251,7 @@ func TestHTTPSSEGateway_SendCustomerMessageWithAttachments(t *testing.T) {
 		}, nil
 	})
 
-	gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+	gw := outbound.NewHTTPGateway(client, "https://dev.lab.aiwave.io")
 	att := model.NewAttachment("test.pdf", "content-ref-99", map[string]string{"toolName": "docViewer"})
 	cmd := inbound.AddCustomerMessageCommand{
 		ExternalID:  "ext-user-1",
@@ -266,7 +266,7 @@ func TestHTTPSSEGateway_SendCustomerMessageWithAttachments(t *testing.T) {
 	assert.JSONEq(t, expectedJSON, string(receivedBody))
 }
 
-func TestHTTPSSEGateway_CloseSession(t *testing.T) {
+func TestHTTPGateway_CloseSession(t *testing.T) {
 	var receivedMethod string
 	var receivedPath string
 	var receivedHeaders http.Header
@@ -281,7 +281,7 @@ func TestHTTPSSEGateway_CloseSession(t *testing.T) {
 		}, nil
 	})
 
-	gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+	gw := outbound.NewHTTPGateway(client, "https://dev.lab.aiwave.io")
 	cmd := inbound.CloseConversationCommand{
 		ExternalID:  "ext-user-1",
 		Tenant:      "customer-care",
@@ -299,7 +299,7 @@ func TestHTTPSSEGateway_CloseSession(t *testing.T) {
 	assert.Equal(t, "application/json", receivedHeaders.Get("Accept"))
 }
 
-func TestHTTPSSEGateway_ListSessions(t *testing.T) {
+func TestHTTPGateway_ListSessions(t *testing.T) {
 	var receivedPath string
 	var receivedQuery string
 	var receivedHeaders http.Header
@@ -328,7 +328,7 @@ func TestHTTPSSEGateway_ListSessions(t *testing.T) {
 		}, nil
 	})
 
-	gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+	gw := outbound.NewHTTPGateway(client, "https://dev.lab.aiwave.io")
 	cmd := inbound.ListSessionsCommand{
 		AssistantName: "RocchettoEmbeddingsV2",
 		ExternalID:    "user-alpha",
@@ -356,7 +356,7 @@ func TestHTTPSSEGateway_ListSessions(t *testing.T) {
 	assert.Equal(t, "Bearer pat-token-list", receivedHeaders.Get("Authorization"))
 }
 
-func TestHTTPSSEGateway_GetSessionRecording(t *testing.T) {
+func TestHTTPGateway_GetSessionRecording(t *testing.T) {
 	var receivedPath string
 	var receivedHeaders http.Header
 
@@ -376,7 +376,7 @@ func TestHTTPSSEGateway_GetSessionRecording(t *testing.T) {
 		}, nil
 	})
 
-	gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+	gw := outbound.NewHTTPGateway(client, "https://dev.lab.aiwave.io")
 	cmd := inbound.RestoreConversationCommand{
 		ExternalID:  "session-restore-1",
 		BearerToken: "pat-token-rec",

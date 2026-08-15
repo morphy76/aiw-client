@@ -64,7 +64,7 @@ func (b *ConversationalServiceBuilder) WithTimeout(timeout time.Duration) *Conve
 // Build wires up internal components and returns a ready-to-use ConversationalService.
 func (b *ConversationalServiceBuilder) Build() (ConversationalService, error) {
 	repo := outboundAdapters.NewInMemoryConversationRepository()
-	gateway := outboundAdapters.NewHTTPSSEGateway(b.httpClient, b.baseURL)
+	gateway := outboundAdapters.NewHTTPGateway(b.httpClient, b.baseURL)
 
 	useCase := appService.NewConversationalService(repo, gateway)
 	adapter := newConversationalServiceAdapter(useCase)
