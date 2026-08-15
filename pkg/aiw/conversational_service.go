@@ -158,6 +158,15 @@ func (a *conversationalServiceAdapter) OpenConversation(
 
 // AddCustomerMessage appends a customer message to the conversation and dispatches it.
 func (a *conversationalServiceAdapter) AddCustomerMessage(ctx ConversationalContext, mex string) error {
+	return a.AddCustomerMessageWithOptions(ctx, mex, MessageOptions{})
+}
+
+// AddCustomerMessageWithOptions appends a customer message with optional attachments and dispatches it.
+func (a *conversationalServiceAdapter) AddCustomerMessageWithOptions(
+	ctx ConversationalContext,
+	mex string,
+	opts MessageOptions,
+) error {
 	start := time.Now()
 	log := zerolog.Ctx(ctx).With().
 		Str("op", "AddCustomerMessage").
@@ -179,9 +188,18 @@ func (a *conversationalServiceAdapter) AddCustomerMessage(ctx ConversationalCont
 		return err
 	}
 
+	var attachments []model.Attachment
+	if len(opts.Attachments) > 0 {
+		attachments = make([]model.Attachment, 0, len(opts.Attachments))
+		for _, att := range opts.Attachments {
+			attachments = append(attachments, model.NewAttachment(att.Filename, att.ContentRef, att.Metadata))
+		}
+	}
+
 	_, err := a.useCase.AddCustomerMessage(ctx, inbound.AddCustomerMessageCommand{
 		ExternalID:  ctx.ExternalID(),
 		Message:     mex,
+		Attachments: attachments,
 		Tenant:      ctx.Tenant(),
 		BearerToken: ctx.BearerToken(),
 		Sandbox:     ctx.Sandbox(),
@@ -245,6 +263,122 @@ func (a *conversationalServiceAdapter) CloseConversation(ctx ConversationalConte
 		Dur("duration_ms", time.Since(start)).
 		Msg("completed CloseConversation")
 	return nil
+}
+
+// ListSessions retrieves past conversational sessions/activities for the user.
+func (a *conversationalServiceAdapter) ListSessions(
+	ctx ConversationalContext,
+	query ListSessionsQuery,
+) ([]RecentActivity, error) {
+	start := time.Now()
+	log := zerolog.Ctx(ctx).With().
+		Str("op", "ListSessions").
+		Str("external_id", ctx.ExternalID()).
+		Str("tenant", ctx.Tenant()).
+		Logger()
+	log.Debug().Msg("starting ListSessions")
+
+	assistant := query.AssistantName
+	if assistant == "" {
+		assistant = ctx.DialogModel()
+	}
+
+	domainActs, err := a.useCase.ListSessions(ctx, inbound.ListSessionsCommand{
+		AssistantName: assistant,
+		ExternalID:    ctx.ExternalID(),
+		Limit:         query.Limit,
+		LastIDFound:   query.LastIDFound,
+		SortField:     query.SortField,
+		SortOrder:     query.SortOrder,
+		Tenant:        ctx.Tenant(),
+		BearerToken:   ctx.BearerToken(),
+		Sandbox:       ctx.Sandbox(),
+		BaseURL:       ctx.BaseURL(),
+		Headers:       ctx.Headers(),
+	})
+	if err != nil {
+		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("failed to list sessions")
+		return nil, err
+	}
+
+	activities := make([]RecentActivity, 0, len(domainActs))
+	for _, act := range domainActs {
+		activities = append(activities, RecentActivity{
+			ExternalID: act.ExternalID(),
+			Title:      act.Title(),
+			StartTime:  act.StartTime(),
+		})
+	}
+
+	log.Info().
+		Int("activities_count", len(activities)).
+		Dur("duration_ms", time.Since(start)).
+		Msg("completed ListSessions")
+	return activities, nil
+}
+
+// RestoreConversation retrieves past session recording data and returns restored historical messages.
+func (a *conversationalServiceAdapter) RestoreConversation(ctx ConversationalContext) ([]Message, error) {
+	start := time.Now()
+	log := zerolog.Ctx(ctx).With().
+		Str("op", "RestoreConversation").
+		Str("external_id", ctx.ExternalID()).
+		Str("tenant", ctx.Tenant()).
+		Logger()
+	log.Debug().Msg("starting RestoreConversation")
+
+	conv, err := a.useCase.RestoreConversation(ctx, inbound.RestoreConversationCommand{
+		ExternalID:  ctx.ExternalID(),
+		Tenant:      ctx.Tenant(),
+		BearerToken: ctx.BearerToken(),
+		Sandbox:     ctx.Sandbox(),
+		BaseURL:     ctx.BaseURL(),
+		Headers:     ctx.Headers(),
+	})
+	if err != nil {
+		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("failed to restore conversation")
+		return nil, err
+	}
+
+	domainMsgs := conv.Messages()
+	messages := make([]Message, 0, len(domainMsgs))
+	for _, m := range domainMsgs {
+		var ans *StructuredAnswer
+		if m.Answer() != nil {
+			srcs := make([]Source, 0, len(m.Answer().Sources()))
+			for _, s := range m.Answer().Sources() {
+				srcs = append(srcs, Source{ID: s.ID(), Title: s.Title()})
+			}
+			ans = &StructuredAnswer{
+				Text:    m.Answer().Text(),
+				Sources: srcs,
+			}
+		}
+
+		atts := make([]Attachment, 0, len(m.Attachments()))
+		for _, a := range m.Attachments() {
+			atts = append(atts, Attachment{
+				Filename:   a.Filename(),
+				ContentRef: a.ContentRef(),
+				Metadata:   a.Metadata(),
+			})
+		}
+
+		messages = append(messages, Message{
+			ID:          m.ID(),
+			Sender:      string(m.Sender()),
+			Content:     m.Content(),
+			Timestamp:   m.Timestamp(),
+			Attachments: atts,
+			Answer:      ans,
+		})
+	}
+
+	log.Info().
+		Int("restored_messages_count", len(messages)).
+		Dur("duration_ms", time.Since(start)).
+		Msg("completed RestoreConversation")
+	return messages, nil
 }
 
 func (a *conversationalServiceAdapter) safeInvokeOpen(ctx ConversationalContext, fn OnOpenFn) (err error) {

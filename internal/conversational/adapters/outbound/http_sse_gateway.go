@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,9 +25,11 @@ type HTTPClient interface {
 }
 
 const (
-	defaultLiveEndpoint    = "/dialog/api/conversation/v1.0/live"
-	defaultMessageEndpoint = "/dialog/api/conversation/v1.0/message"
-	defaultCloseEndpoint   = "/dialog/api/conversation/v1.0"
+	defaultLiveEndpoint        = "/dialog/api/conversation/v1.0/live"
+	defaultMessageEndpoint     = "/dialog/api/conversation/v1.0/message"
+	defaultCloseEndpoint       = "/dialog/api/conversation/v1.0"
+	defaultSessionsEndpoint    = "/dialog/api/chat/sessions"
+	defaultDialogSessionEndpoint = "/dialog/api/dialogSession/v1.0/_byExternalId"
 )
 
 // sseRawEvent mirrors the JSON SSE event payload structure from AIW.
@@ -42,12 +45,29 @@ type sseRawEvent struct {
 	} `json:"message,omitempty"`
 }
 
+type attachmentPayload struct {
+	Filename   string            `json:"filename"`
+	ContentRef string            `json:"contentref"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
 // customerMessagePayload is the JSON payload sent to add a message.
 type customerMessagePayload struct {
+	ExternalID  string              `json:"external_id"`
+	Command     string              `json:"command"`
+	Role        string              `json:"role"`
+	Text        string              `json:"text"`
+	Attachments []attachmentPayload `json:"attachments,omitempty"`
+}
+
+type sessionResponseDTO struct {
 	ExternalID string `json:"external_id"`
-	Command    string `json:"command"`
-	Role       string `json:"role"`
-	Text       string `json:"text"`
+	Title      string `json:"title"`
+	StartTime  string `json:"start_time"`
+}
+
+type sessionRecordingDTO struct {
+	RecordingData string `json:"recordingData"`
 }
 
 // HTTPSSEGateway implements AIWGateway over HTTP and Server-Sent Events (SSE).
@@ -73,13 +93,7 @@ func (g *HTTPSSEGateway) OpenSessionStream(
 	cmd inbound.OpenConversationCommand,
 	handler outboundPorts.StreamEventHandler,
 ) error {
-	baseURL := g.baseURL
-	if cmd.BaseURL != "" {
-		baseURL = strings.TrimRight(cmd.BaseURL, "/")
-	}
-	if baseURL == "" {
-		baseURL = "https://dev.lab.aiwave.io"
-	}
+	baseURL := g.resolveBaseURL(cmd.BaseURL)
 
 	targetURL := fmt.Sprintf("%s%s/%s", baseURL, defaultLiveEndpoint, url.PathEscape(cmd.ExternalID))
 	if cmd.DialogModel != "" {
@@ -120,7 +134,6 @@ func (g *HTTPSSEGateway) OpenSessionStream(
 		}()
 
 		scanner := bufio.NewScanner(resp.Body)
-		// Support larger SSE lines
 		buf := make([]byte, 64*1024)
 		scanner.Buffer(buf, 1024*1024)
 
@@ -212,21 +225,27 @@ func (g *HTTPSSEGateway) SendCustomerMessage(
 	cmd inbound.AddCustomerMessageCommand,
 	dialogID string,
 ) error {
-	baseURL := g.baseURL
-	if cmd.BaseURL != "" {
-		baseURL = strings.TrimRight(cmd.BaseURL, "/")
-	}
-	if baseURL == "" {
-		baseURL = "https://dev.lab.aiwave.io"
-	}
-
+	baseURL := g.resolveBaseURL(cmd.BaseURL)
 	targetURL := fmt.Sprintf("%s%s/%s", baseURL, defaultMessageEndpoint, url.PathEscape(dialogID))
 
+	var attachments []attachmentPayload
+	if len(cmd.Attachments) > 0 {
+		attachments = make([]attachmentPayload, 0, len(cmd.Attachments))
+		for _, a := range cmd.Attachments {
+			attachments = append(attachments, attachmentPayload{
+				Filename:   a.Filename(),
+				ContentRef: a.ContentRef(),
+				Metadata:   a.Metadata(),
+			})
+		}
+	}
+
 	payload := customerMessagePayload{
-		ExternalID: cmd.ExternalID,
-		Command:    "addMessage",
-		Role:       "CUSTOMER",
-		Text:       cmd.Message,
+		ExternalID:  cmd.ExternalID,
+		Command:     "addMessage",
+		Role:        "CUSTOMER",
+		Text:        cmd.Message,
+		Attachments: attachments,
 	}
 
 	bodyBytes, err := json.Marshal(payload)
@@ -263,14 +282,7 @@ func (g *HTTPSSEGateway) CloseSession(
 	cmd inbound.CloseConversationCommand,
 	dialogID string,
 ) error {
-	baseURL := g.baseURL
-	if cmd.BaseURL != "" {
-		baseURL = strings.TrimRight(cmd.BaseURL, "/")
-	}
-	if baseURL == "" {
-		baseURL = "https://dev.lab.aiwave.io"
-	}
-
+	baseURL := g.resolveBaseURL(cmd.BaseURL)
 	targetURL := fmt.Sprintf("%s%s/%s/%s", baseURL, defaultCloseEndpoint, url.PathEscape(cmd.ExternalID), url.PathEscape(dialogID))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, targetURL, nil)
@@ -294,6 +306,143 @@ func (g *HTTPSSEGateway) CloseSession(
 	}
 
 	return nil
+}
+
+// ListSessions retrieves recent activity sessions for an external ID from /chat/sessions/{assistantName}.
+func (g *HTTPSSEGateway) ListSessions(
+	ctx context.Context,
+	cmd inbound.ListSessionsCommand,
+) ([]model.RecentActivity, error) {
+	baseURL := g.resolveBaseURL(cmd.BaseURL)
+
+	limit := cmd.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	offset := cmd.LastIDFound
+	if offset < 0 {
+		offset = 0
+	}
+	sortField := cmd.SortField
+	if sortField == "" {
+		sortField = "update_date"
+	}
+	sortOrder := cmd.SortOrder
+	if sortOrder == "" {
+		sortOrder = "DESC"
+	}
+
+	assistantName := cmd.AssistantName
+	if assistantName == "" {
+		assistantName = "default"
+	}
+
+	queryParams := url.Values{}
+	queryParams.Set("numberOfSessionsToRetrieve", strconv.Itoa(limit))
+	queryParams.Set("lastIdFound", strconv.Itoa(offset))
+	queryParams.Set("externalId", cmd.ExternalID)
+	queryParams.Set("sortField", sortField)
+	queryParams.Set("sortOrder", sortOrder)
+
+	targetURL := fmt.Sprintf("%s%s/%s?%s", baseURL, defaultSessionsEndpoint, url.PathEscape(assistantName), queryParams.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create list sessions request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	g.applyHeaders(req, cmd.Tenant, cmd.BearerToken, cmd.Sandbox, cmd.Headers)
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("failed to list sessions: HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var dtos []sessionResponseDTO
+	if err := json.NewDecoder(resp.Body).Decode(&dtos); err != nil {
+		return nil, fmt.Errorf("failed to decode sessions response: %w", err)
+	}
+
+	activities := make([]model.RecentActivity, 0, len(dtos))
+	for _, dto := range dtos {
+		var startTime time.Time
+		if dto.StartTime != "" {
+			if t, err := time.Parse(time.RFC3339, dto.StartTime); err == nil {
+				startTime = t
+			} else if t, err := time.Parse("2006-01-02 15:04:05", dto.StartTime); err == nil {
+				startTime = t
+			}
+		}
+		act, err := model.NewRecentActivity(dto.ExternalID, dto.Title, startTime)
+		if err == nil {
+			activities = append(activities, act)
+		}
+	}
+
+	return activities, nil
+}
+
+// GetSessionRecording retrieves past XML dialog recording data from /dialogSession/v1.0/_byExternalId/{externalId}.
+func (g *HTTPSSEGateway) GetSessionRecording(
+	ctx context.Context,
+	cmd inbound.RestoreConversationCommand,
+) ([]model.Message, error) {
+	baseURL := g.resolveBaseURL(cmd.BaseURL)
+	targetURL := fmt.Sprintf("%s%s/%s", baseURL, defaultDialogSessionEndpoint, url.PathEscape(cmd.ExternalID))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create get session recording request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	g.applyHeaders(req, cmd.Tenant, cmd.BearerToken, cmd.Sandbox, cmd.Headers)
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get session recording request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("failed to get session recording: HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var dtos []sessionRecordingDTO
+	if err := json.NewDecoder(resp.Body).Decode(&dtos); err != nil {
+		return nil, fmt.Errorf("failed to decode session recordings JSON: %w", err)
+	}
+
+	var allMessages []model.Message
+	for _, item := range dtos {
+		if item.RecordingData != "" {
+			parsed, err := ParseRecordingData(item.RecordingData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse recording XML: %w", err)
+			}
+			allMessages = append(allMessages, parsed...)
+		}
+	}
+
+	return allMessages, nil
+}
+
+func (g *HTTPSSEGateway) resolveBaseURL(customURL string) string {
+	if customURL != "" {
+		return strings.TrimRight(customURL, "/")
+	}
+	if g.baseURL != "" {
+		return g.baseURL
+	}
+	return "https://dev.lab.aiwave.io"
 }
 
 func (g *HTTPSSEGateway) applyHeaders(

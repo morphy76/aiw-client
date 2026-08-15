@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/morphy76/aiw-client/internal/conversational/application/ports/inbound"
 	"github.com/morphy76/aiw-client/internal/conversational/application/ports/outbound"
@@ -66,6 +67,22 @@ func (m *MockAIWGateway) SendCustomerMessage(ctx context.Context, cmd inbound.Ad
 func (m *MockAIWGateway) CloseSession(ctx context.Context, cmd inbound.CloseConversationCommand, dialogID string) error {
 	args := m.Called(ctx, cmd, dialogID)
 	return args.Error(0)
+}
+
+func (m *MockAIWGateway) ListSessions(ctx context.Context, cmd inbound.ListSessionsCommand) ([]model.RecentActivity, error) {
+	args := m.Called(ctx, cmd)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]model.RecentActivity), args.Error(1)
+}
+
+func (m *MockAIWGateway) GetSessionRecording(ctx context.Context, cmd inbound.RestoreConversationCommand) ([]model.Message, error) {
+	args := m.Called(ctx, cmd)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]model.Message), args.Error(1)
 }
 
 func TestConversationalService_OpenConversation(t *testing.T) {
@@ -213,6 +230,67 @@ func TestConversationalService_CloseConversation(t *testing.T) {
 		err = svc.CloseConversation(ctx, cmd)
 		require.NoError(t, err)
 		assert.Equal(t, model.StateClosed, activeConv.State())
+
+		repo.AssertExpectations(t)
+		gateway.AssertExpectations(t)
+	})
+}
+
+func TestConversationalService_ListSessions(t *testing.T) {
+	t.Run("successfully retrieves session activities", func(t *testing.T) {
+		repo := new(MockConversationRepository)
+		gateway := new(MockAIWGateway)
+		svc := service.NewConversationalService(repo, gateway)
+
+		ctx := context.Background()
+		cmd := inbound.ListSessionsCommand{
+			AssistantName: "RocchettoEmbeddingsV2",
+			ExternalID:    "user-alpha",
+			Limit:         10,
+		}
+
+		act1, _ := model.NewRecentActivity("user-alpha-session-1", "Account Support", time.Now().UTC())
+		act2, _ := model.NewRecentActivity("user-alpha-session-2", "Payment Inquiry", time.Now().UTC())
+
+		gateway.On("ListSessions", ctx, cmd).Return([]model.RecentActivity{act1, act2}, nil)
+
+		activities, err := svc.ListSessions(ctx, cmd)
+		require.NoError(t, err)
+		require.Len(t, activities, 2)
+		assert.Equal(t, "user-alpha-session-1", activities[0].ExternalID())
+		assert.Equal(t, "Account Support", activities[0].Title())
+
+		gateway.AssertExpectations(t)
+	})
+}
+
+func TestConversationalService_RestoreConversation(t *testing.T) {
+	t.Run("successfully restores conversation messages into aggregate", func(t *testing.T) {
+		repo := new(MockConversationRepository)
+		gateway := new(MockAIWGateway)
+		svc := service.NewConversationalService(repo, gateway)
+
+		ctx := context.Background()
+		cmd := inbound.RestoreConversationCommand{
+			ExternalID: "ext-restored-user",
+		}
+
+		msg1, _ := model.NewMessage("m-1", model.SenderCustomer, "Hello previous turn", time.Now().UTC())
+		msg2, _ := model.NewMessage("m-2", model.SenderAgent, "Welcome back!", time.Now().UTC())
+
+		gateway.On("GetSessionRecording", ctx, cmd).Return([]model.Message{msg1, msg2}, nil)
+		repo.On("FindByExternalID", ctx, "ext-restored-user").Return(nil, model.ErrConversationNotFound)
+		repo.On("Save", ctx, mock.MatchedBy(func(c *model.Conversation) bool {
+			return c.ExternalID() == "ext-restored-user" && len(c.Messages()) == 2
+		})).Return(nil)
+
+		conv, err := svc.RestoreConversation(ctx, cmd)
+		require.NoError(t, err)
+		require.NotNil(t, conv)
+		assert.Equal(t, "ext-restored-user", conv.ExternalID())
+		require.Len(t, conv.Messages(), 2)
+		assert.Equal(t, "Hello previous turn", conv.Messages()[0].Content())
+		assert.Equal(t, "Welcome back!", conv.Messages()[1].Content())
 
 		repo.AssertExpectations(t)
 		gateway.AssertExpectations(t)

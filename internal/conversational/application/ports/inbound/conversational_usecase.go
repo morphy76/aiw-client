@@ -31,6 +31,7 @@ type OpenConversationCommand struct {
 type AddCustomerMessageCommand struct {
 	ExternalID  string
 	Message     string
+	Attachments []model.Attachment
 	Tenant      string
 	BearerToken string
 	Sandbox     bool
@@ -40,6 +41,31 @@ type AddCustomerMessageCommand struct {
 
 // CloseConversationCommand encapsulates inputs for closing a conversation session.
 type CloseConversationCommand struct {
+	ExternalID  string
+	Tenant      string
+	BearerToken string
+	Sandbox     bool
+	BaseURL     string
+	Headers     map[string]string
+}
+
+// ListSessionsCommand encapsulates inputs for querying past conversation sessions.
+type ListSessionsCommand struct {
+	AssistantName string
+	ExternalID    string
+	Limit         int
+	LastIDFound   int
+	SortField     string
+	SortOrder     string
+	Tenant        string
+	BearerToken   string
+	Sandbox       bool
+	BaseURL       string
+	Headers       map[string]string
+}
+
+// RestoreConversationCommand encapsulates inputs for restoring an existing conversation from recording history.
+type RestoreConversationCommand struct {
 	ExternalID  string
 	Tenant      string
 	BearerToken string
@@ -61,4 +87,10 @@ type ConversationalUseCase interface {
 
 	// GetConversation retrieves an existing conversation by external ID.
 	GetConversation(ctx context.Context, externalID string) (*model.Conversation, error)
+
+	// ListSessions retrieves a summary list of past conversation sessions/activities.
+	ListSessions(ctx context.Context, cmd ListSessionsCommand) ([]model.RecentActivity, error)
+
+	// RestoreConversation retrieves past session recording data, restores messages, and updates aggregate state.
+	RestoreConversation(ctx context.Context, cmd RestoreConversationCommand) (*model.Conversation, error)
 }

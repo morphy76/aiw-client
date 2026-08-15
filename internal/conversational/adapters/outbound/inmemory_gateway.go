@@ -3,6 +3,7 @@ package outbound
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -119,3 +120,46 @@ func (g *InMemoryAIWGateway) CloseSession(
 	}
 	return nil
 }
+
+// ListSessions returns simulated recent activities for the external ID.
+func (g *InMemoryAIWGateway) ListSessions(
+	_ context.Context,
+	cmd inbound.ListSessionsCommand,
+) ([]model.RecentActivity, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var results []model.RecentActivity
+	for _, session := range g.sessions {
+		if session.externalID == cmd.ExternalID || cmd.ExternalID == "" {
+			title := "Session with " + session.externalID
+			if len(session.messages) > 0 {
+				title = session.messages[0]
+			}
+			act, _ := model.NewRecentActivity(session.externalID, title, time.Now().UTC())
+			results = append(results, act)
+		}
+	}
+	return results, nil
+}
+
+// GetSessionRecording returns simulated message history for the session.
+func (g *InMemoryAIWGateway) GetSessionRecording(
+	_ context.Context,
+	cmd inbound.RestoreConversationCommand,
+) ([]model.Message, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	var messages []model.Message
+	for _, session := range g.sessions {
+		if session.externalID == cmd.ExternalID {
+			for _, m := range session.messages {
+				msg, _ := model.NewMessage(uuid.New().String(), model.SenderCustomer, m, time.Now().UTC())
+				messages = append(messages, msg)
+			}
+		}
+	}
+	return messages, nil
+}
+

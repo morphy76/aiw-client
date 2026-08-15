@@ -273,3 +273,71 @@ func (s *ConversationalService) GetConversation(
 		Msg("conversation retrieved successfully")
 	return conv, nil
 }
+
+// ListSessions retrieves summary past sessions/activities from the gateway.
+func (s *ConversationalService) ListSessions(
+	ctx context.Context,
+	cmd inbound.ListSessionsCommand,
+) ([]model.RecentActivity, error) {
+	start := time.Now()
+	log := zerolog.Ctx(ctx).With().
+		Str("op", "ListSessions").
+		Str("external_id", cmd.ExternalID).
+		Str("assistant", cmd.AssistantName).
+		Logger()
+	log.Debug().Msg("starting ListSessions")
+
+	activities, err := s.gateway.ListSessions(ctx, cmd)
+	if err != nil {
+		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("failed to list sessions via gateway")
+		return nil, err
+	}
+
+	log.Info().
+		Int("activities_count", len(activities)).
+		Dur("duration_ms", time.Since(start)).
+		Msg("completed ListSessions")
+	return activities, nil
+}
+
+// RestoreConversation retrieves previous session recording history, populates aggregate, and persists state.
+func (s *ConversationalService) RestoreConversation(
+	ctx context.Context,
+	cmd inbound.RestoreConversationCommand,
+) (*model.Conversation, error) {
+	start := time.Now()
+	log := zerolog.Ctx(ctx).With().
+		Str("op", "RestoreConversation").
+		Str("external_id", cmd.ExternalID).
+		Logger()
+	log.Debug().Msg("starting RestoreConversation")
+
+	messages, err := s.gateway.GetSessionRecording(ctx, cmd)
+	if err != nil {
+		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("failed to get session recording from gateway")
+		return nil, err
+	}
+
+	existing, _ := s.repo.FindByExternalID(ctx, cmd.ExternalID)
+	var conv *model.Conversation
+	if existing != nil {
+		conv = existing
+		for _, msg := range messages {
+			_ = conv.AddMessage(msg)
+		}
+	} else {
+		now := time.Now().UTC()
+		conv = model.Reconstitute(cmd.ExternalID, "", model.StateIdle, messages, now, now)
+	}
+
+	if err := s.repo.Save(ctx, conv); err != nil {
+		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("failed to save restored conversation aggregate")
+		return nil, err
+	}
+
+	log.Info().
+		Int("messages_count", len(messages)).
+		Dur("duration_ms", time.Since(start)).
+		Msg("completed RestoreConversation")
+	return conv, nil
+}

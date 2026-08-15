@@ -19,12 +19,105 @@ const (
 	SenderSystem Sender = "SYSTEM"
 )
 
+// Source represents an information citation or document reference supporting an answer.
+type Source struct {
+	id    string
+	title string
+}
+
+// NewSource creates a new citation source value object.
+func NewSource(id, title string) Source {
+	return Source{
+		id:    strings.TrimSpace(id),
+		title: strings.TrimSpace(title),
+	}
+}
+
+// ID returns the source document identifier.
+func (s Source) ID() string {
+	return s.id
+}
+
+// Title returns the source document title.
+func (s Source) Title() string {
+	return s.title
+}
+
+// StructuredAnswer represents a structured bot answer containing answer text and supporting sources.
+type StructuredAnswer struct {
+	text    string
+	sources []Source
+}
+
+// NewStructuredAnswer creates a new StructuredAnswer value object.
+func NewStructuredAnswer(text string, sources []Source) StructuredAnswer {
+	srcs := make([]Source, len(sources))
+	copy(srcs, sources)
+	return StructuredAnswer{
+		text:    text,
+		sources: srcs,
+	}
+}
+
+// Text returns the answer text.
+func (a StructuredAnswer) Text() string {
+	return a.text
+}
+
+// Sources returns the supporting citation sources.
+func (a StructuredAnswer) Sources() []Source {
+	srcs := make([]Source, len(a.sources))
+	copy(srcs, a.sources)
+	return srcs
+}
+
+// Attachment represents a file or artifact attached to a conversation message.
+type Attachment struct {
+	filename   string
+	contentRef string
+	metadata   map[string]string
+}
+
+// NewAttachment creates a new Attachment value object.
+func NewAttachment(filename, contentRef string, metadata map[string]string) Attachment {
+	metaCopy := make(map[string]string, len(metadata))
+	for k, v := range metadata {
+		metaCopy[k] = v
+	}
+	return Attachment{
+		filename:   strings.TrimSpace(filename),
+		contentRef: strings.TrimSpace(contentRef),
+		metadata:   metaCopy,
+	}
+}
+
+// Filename returns the attachment file name.
+func (a Attachment) Filename() string {
+	return a.filename
+}
+
+// ContentRef returns the content reference pointer or URL.
+func (a Attachment) ContentRef() string {
+	return a.contentRef
+}
+
+// Metadata returns a copy of attachment metadata.
+func (a Attachment) Metadata() map[string]string {
+	metaCopy := make(map[string]string, len(a.metadata))
+	for k, v := range a.metadata {
+		metaCopy[k] = v
+	}
+	return metaCopy
+}
+
 // Message represents an immutable conversational message value object.
 type Message struct {
-	id        string
-	sender    Sender
-	content   string
-	timestamp time.Time
+	id          string
+	sender      Sender
+	content     string
+	timestamp   time.Time
+	attachments []Attachment
+	answer      *StructuredAnswer
 }
 
 // NewMessage creates and validates a new Message value object.
@@ -37,11 +130,43 @@ func NewMessage(id string, sender Sender, content string, timestamp time.Time) (
 		timestamp = time.Now().UTC()
 	}
 	return Message{
-		id:        id,
-		sender:    sender,
-		content:   trimmed,
-		timestamp: timestamp,
+		id:          id,
+		sender:      sender,
+		content:     trimmed,
+		timestamp:   timestamp,
+		attachments: make([]Attachment, 0),
 	}, nil
+}
+
+// NewMessageWithDetails creates a rich Message with attachments and optional structured answer.
+func NewMessageWithDetails(
+	id string,
+	sender Sender,
+	content string,
+	timestamp time.Time,
+	attachments []Attachment,
+	answer *StructuredAnswer,
+) Message {
+	if timestamp.IsZero() {
+		timestamp = time.Now().UTC()
+	}
+	attCopy := make([]Attachment, len(attachments))
+	copy(attCopy, attachments)
+
+	var ansCopy *StructuredAnswer
+	if answer != nil {
+		ans := NewStructuredAnswer(answer.text, answer.sources)
+		ansCopy = &ans
+	}
+
+	return Message{
+		id:          id,
+		sender:      sender,
+		content:     content,
+		timestamp:   timestamp,
+		attachments: attCopy,
+		answer:      ansCopy,
+	}
 }
 
 // ID returns the message identifier.
@@ -62,4 +187,20 @@ func (m Message) Content() string {
 // Timestamp returns the time the message was created.
 func (m Message) Timestamp() time.Time {
 	return m.timestamp
+}
+
+// Attachments returns a copy of message attachments.
+func (m Message) Attachments() []Attachment {
+	attCopy := make([]Attachment, len(m.attachments))
+	copy(attCopy, m.attachments)
+	return attCopy
+}
+
+// Answer returns the parsed structured answer, or nil if none.
+func (m Message) Answer() *StructuredAnswer {
+	if m.answer == nil {
+		return nil
+	}
+	ans := NewStructuredAnswer(m.answer.text, m.answer.sources)
+	return &ans
 }

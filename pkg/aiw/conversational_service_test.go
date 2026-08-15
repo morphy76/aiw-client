@@ -425,3 +425,127 @@ func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 	assert.Contains(t, postsReceived[1], "Second question from user")
 	assert.True(t, deleteReceived)
 }
+
+func TestConversationalService_ListSessions(t *testing.T) {
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		assert.Equal(t, "/dialog/api/chat/sessions/RocchettoEmbeddingsV2", req.URL.Path)
+		assert.Equal(t, "user-456", req.URL.Query().Get("externalId"))
+		assert.Equal(t, "5", req.URL.Query().Get("numberOfSessionsToRetrieve"))
+
+		jsonResp := `[
+			{
+				"external_id": "user-456_sess_1",
+				"title": "Password reset inquiry",
+				"start_time": "2026-08-15T09:00:00Z"
+			}
+		]`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader([]byte(jsonResp))),
+		}, nil
+	})
+
+	convSvc, err := aiw.NewConversationalServiceBuilder().
+		WithHTTPClient(client).
+		Build()
+	require.NoError(t, err)
+
+	convCtx := aiw.NewConversationalContext(context.Background(), "user-456")
+	sessions, err := convSvc.ListSessions(convCtx, aiw.ListSessionsQuery{
+		AssistantName: "RocchettoEmbeddingsV2",
+		Limit:         5,
+	})
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, "user-456_sess_1", sessions[0].ExternalID)
+	assert.Equal(t, "Password reset inquiry", sessions[0].Title)
+}
+
+func TestConversationalService_RestoreConversation(t *testing.T) {
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		assert.Equal(t, "/dialog/api/dialogSession/v1.0/_byExternalId/user-prev-77", req.URL.Path)
+
+		jsonResp := `[
+			{
+				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Can I return an item?</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:02.000\"><item id=\"u_m\"><subItem><value>{\"answer\":\"Yes, within 30 days.\",\"sources\":[{\"id\":\"p1\",\"title\":\"Return Policy\"}]}</value></subItem></item></systemTurn></session></recording>"
+			}
+		]`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader([]byte(jsonResp))),
+		}, nil
+	})
+
+	convSvc, err := aiw.NewConversationalServiceBuilder().
+		WithHTTPClient(client).
+		Build()
+	require.NoError(t, err)
+
+	convCtx := aiw.NewConversationalContext(context.Background(), "user-prev-77")
+	messages, err := convSvc.RestoreConversation(convCtx)
+	require.NoError(t, err)
+	require.Len(t, messages, 2)
+
+	assert.Equal(t, "CUSTOMER", messages[0].Sender)
+	assert.Equal(t, "Can I return an item?", messages[0].Content)
+
+	assert.Equal(t, "AGENT", messages[1].Sender)
+	require.NotNil(t, messages[1].Answer)
+	assert.Equal(t, "Yes, within 30 days.", messages[1].Answer.Text)
+	require.Len(t, messages[1].Answer.Sources, 1)
+	assert.Equal(t, "p1", messages[1].Answer.Sources[0].ID)
+	assert.Equal(t, "Return Policy", messages[1].Answer.Sources[0].Title)
+}
+
+func TestConversationalService_AddCustomerMessageWithOptions(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+
+	var sentJSON string
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Accept") == "text/event-stream" {
+			go func() {
+				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-att-1\"}}\n\n")
+			}()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       pr,
+			}, nil
+		}
+		if req.Method == http.MethodPost {
+			bodyBytes, _ := io.ReadAll(req.Body)
+			sentJSON = string(bodyBytes)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewReader([]byte(`{"status":"ok"}`))),
+			}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+
+	convSvc, err := aiw.NewConversationalServiceBuilder().
+		WithHTTPClient(client).
+		Build()
+	require.NoError(t, err)
+
+	convCtx := aiw.NewConversationalContext(context.Background(), "user-att-test")
+	err = convSvc.OpenConversation(convCtx, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+
+	err = convSvc.AddCustomerMessageWithOptions(convCtx, "Here is invoice", aiw.MessageOptions{
+		Attachments: []aiw.Attachment{
+			{
+				Filename:   "invoice.pdf",
+				ContentRef: "ref-invoice-101",
+				Metadata:   map[string]string{"type": "invoice"},
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, sentJSON, "invoice.pdf")
+	assert.Contains(t, sentJSON, "ref-invoice-101")
+}
+

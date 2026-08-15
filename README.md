@@ -43,6 +43,9 @@ github.com/morphy76/aiw-client/
 - **Facade Pattern & Fluent ClientBuilder**: Clean top-level entry point exposing conversational and platform services, constructed via `NewClientBuilder()` or functional options `New()`.
 - **Flexible Dependency Injection**: Inject custom `ConversationalService` implementations or pre-configured `ConversationalServiceBuilder` instances directly into the facade.
 - **SSE Stream Protocol**: Replicates full Server-Sent Events (SSE) protocol from the AIW platform (`/dialog/api/conversation/v1.0/live/${externalId}?with_dialog_model=${dialogModel}`), streaming events asynchronously and dispatching to registered callbacks.
+- **Conversation Restoration & History**: Restore past conversational turns and citation sources from AIW recording data (`/dialog/api/dialogSession/v1.0/_byExternalId/${externalId}`).
+- **Session & Activity Listing**: List and paginate past user sessions and activities (`/dialog/api/chat/sessions/${dialogModel}`).
+- **Attachments & Structured Answers**: Support message attachments and automatic parsing of structured bot answers with supporting document citations (`Source`).
 - **Reactive Lifecycle & Message Callbacks**:
   - `OnOpenFn`: Called when `lifecycle.event == "created"` with session `dialog_id`.
   - `OnCustomerMessageFn`: Called when `message.event == "messageAdded"` with role `CUSTOMER`.
@@ -55,6 +58,7 @@ github.com/morphy76/aiw-client/
 - **Hexagonal / DDD Structure**: Decoupled domain models, strict boundary interfaces, and swappable outbound adapters.
 - **Structured Logging**: Context-aware `zerolog` structured logging on service boundaries with execution duration tracking.
 - **Concurrency & Race-Condition Safe**: Fully tested with Go race detector (`-race`).
+
 
 ---
 

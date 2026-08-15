@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/morphy76/aiw-client/internal/conversational/application/ports/inbound"
+	"github.com/morphy76/aiw-client/internal/conversational/domain/model"
 )
 
 // StreamEventHandler handles events dispatched from the real-time conversational SSE stream.
@@ -38,4 +39,10 @@ type AIWGateway interface {
 
 	// CloseSession sends a DELETE request to /dialog/api/conversation/v1.0/{externalId}/{dialogId}.
 	CloseSession(ctx context.Context, cmd inbound.CloseConversationCommand, dialogID string) error
+
+	// ListSessions retrieves recent activity sessions for an external ID from /chat/sessions/{assistantName}.
+	ListSessions(ctx context.Context, cmd inbound.ListSessionsCommand) ([]model.RecentActivity, error)
+
+	// GetSessionRecording retrieves past XML dialog recording data from /dialogSession/v1.0/_byExternalId/{externalId}.
+	GetSessionRecording(ctx context.Context, cmd inbound.RestoreConversationCommand) ([]model.Message, error)
 }

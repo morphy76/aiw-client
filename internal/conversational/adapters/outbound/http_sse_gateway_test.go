@@ -13,6 +13,7 @@ import (
 
 	"github.com/morphy76/aiw-client/internal/conversational/adapters/outbound"
 	"github.com/morphy76/aiw-client/internal/conversational/application/ports/inbound"
+	"github.com/morphy76/aiw-client/internal/conversational/domain/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -236,6 +237,35 @@ func TestHTTPSSEGateway_SendCustomerMessage(t *testing.T) {
 	assert.JSONEq(t, expectedBody, string(receivedBody))
 }
 
+func TestHTTPSSEGateway_SendCustomerMessageWithAttachments(t *testing.T) {
+	var receivedBody []byte
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		var err error
+		receivedBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader([]byte(`{"status":"ok"}`))),
+		}, nil
+	})
+
+	gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+	att := model.NewAttachment("test.pdf", "content-ref-99", map[string]string{"toolName": "docViewer"})
+	cmd := inbound.AddCustomerMessageCommand{
+		ExternalID:  "ext-user-1",
+		Message:     "Here is my attachment",
+		Attachments: []model.Attachment{att},
+	}
+
+	err := gw.SendCustomerMessage(context.Background(), cmd, "dlg-999")
+	require.NoError(t, err)
+
+	expectedJSON := `{"external_id":"ext-user-1","command":"addMessage","role":"CUSTOMER","text":"Here is my attachment","attachments":[{"filename":"test.pdf","contentref":"content-ref-99","metadata":{"toolName":"docViewer"}}]}`
+	assert.JSONEq(t, expectedJSON, string(receivedBody))
+}
+
 func TestHTTPSSEGateway_CloseSession(t *testing.T) {
 	var receivedMethod string
 	var receivedPath string
@@ -268,3 +298,101 @@ func TestHTTPSSEGateway_CloseSession(t *testing.T) {
 	assert.Equal(t, "false", receivedHeaders.Get("x-cognitive-sandbox"))
 	assert.Equal(t, "application/json", receivedHeaders.Get("Accept"))
 }
+
+func TestHTTPSSEGateway_ListSessions(t *testing.T) {
+	var receivedPath string
+	var receivedQuery string
+	var receivedHeaders http.Header
+
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		receivedPath = req.URL.Path
+		receivedQuery = req.URL.RawQuery
+		receivedHeaders = req.Header.Clone()
+
+		jsonResp := `[
+			{
+				"external_id": "session-1",
+				"title": "Account support inquiry",
+				"start_time": "2026-08-15T09:00:00Z"
+			},
+			{
+				"external_id": "session-2",
+				"title": "Order tracking issue",
+				"start_time": "2026-08-14T15:30:00Z"
+			}
+		]`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader([]byte(jsonResp))),
+		}, nil
+	})
+
+	gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+	cmd := inbound.ListSessionsCommand{
+		AssistantName: "RocchettoEmbeddingsV2",
+		ExternalID:    "user-alpha",
+		Limit:         5,
+		LastIDFound:   0,
+		SortField:     "update_date",
+		SortOrder:     "DESC",
+		BearerToken:   "pat-token-list",
+	}
+
+	activities, err := gw.ListSessions(context.Background(), cmd)
+	require.NoError(t, err)
+	require.Len(t, activities, 2)
+
+	assert.Equal(t, "session-1", activities[0].ExternalID())
+	assert.Equal(t, "Account support inquiry", activities[0].Title())
+	assert.Equal(t, "session-2", activities[1].ExternalID())
+	assert.Equal(t, "Order tracking issue", activities[1].Title())
+
+	assert.Equal(t, "/dialog/api/chat/sessions/RocchettoEmbeddingsV2", receivedPath)
+	assert.Contains(t, receivedQuery, "externalId=user-alpha")
+	assert.Contains(t, receivedQuery, "numberOfSessionsToRetrieve=5")
+	assert.Contains(t, receivedQuery, "sortField=update_date")
+	assert.Contains(t, receivedQuery, "sortOrder=DESC")
+	assert.Equal(t, "Bearer pat-token-list", receivedHeaders.Get("Authorization"))
+}
+
+func TestHTTPSSEGateway_GetSessionRecording(t *testing.T) {
+	var receivedPath string
+	var receivedHeaders http.Header
+
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		receivedPath = req.URL.Path
+		receivedHeaders = req.Header.Clone()
+
+		jsonResp := `[
+			{
+				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Hello previous session</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:01.000\"><item id=\"u_m\"><subItem><value>{\"answer\":\"Restored response\",\"sources\":[]}</value></subItem></item></systemTurn></session></recording>"
+			}
+		]`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader([]byte(jsonResp))),
+		}, nil
+	})
+
+	gw := outbound.NewHTTPSSEGateway(client, "https://dev.lab.aiwave.io")
+	cmd := inbound.RestoreConversationCommand{
+		ExternalID:  "session-restore-1",
+		BearerToken: "pat-token-rec",
+	}
+
+	messages, err := gw.GetSessionRecording(context.Background(), cmd)
+	require.NoError(t, err)
+	require.Len(t, messages, 2)
+
+	assert.Equal(t, model.SenderCustomer, messages[0].Sender())
+	assert.Equal(t, "Hello previous session", messages[0].Content())
+	assert.Equal(t, model.SenderAgent, messages[1].Sender())
+	require.NotNil(t, messages[1].Answer())
+	assert.Equal(t, "Restored response", messages[1].Answer().Text())
+
+	assert.Equal(t, "/dialog/api/dialogSession/v1.0/_byExternalId/session-restore-1", receivedPath)
+	assert.Equal(t, "Bearer pat-token-rec", receivedHeaders.Get("Authorization"))
+}
+
