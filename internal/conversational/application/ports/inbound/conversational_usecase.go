@@ -67,6 +67,7 @@ type ListSessionsCommand struct {
 // RestoreConversationCommand encapsulates inputs for restoring an existing conversation from recording history.
 type RestoreConversationCommand struct {
 	ExternalID  string
+	SessionIDs  []int64
 	Tenant      string
 	BearerToken string
 	Sandbox     bool

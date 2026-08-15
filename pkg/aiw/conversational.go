@@ -53,6 +53,7 @@ type Message struct {
 
 // RecentActivity represents a summary of a previous conversation session.
 type RecentActivity struct {
+	ID         int64
 	ExternalID string
 	Title      string
 	StartTime  time.Time

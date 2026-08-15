@@ -7,13 +7,14 @@ import (
 
 // RecentActivity represents a past conversational session summary.
 type RecentActivity struct {
+	id         int64
 	externalID string
 	title      string
 	startTime  time.Time
 }
 
 // NewRecentActivity creates a validated RecentActivity instance.
-func NewRecentActivity(externalID, title string, startTime time.Time) (RecentActivity, error) {
+func NewRecentActivity(id int64, externalID, title string, startTime time.Time) (RecentActivity, error) {
 	trimmed := strings.TrimSpace(externalID)
 	if trimmed == "" {
 		return RecentActivity{}, ErrInvalidExternalID
@@ -22,10 +23,16 @@ func NewRecentActivity(externalID, title string, startTime time.Time) (RecentAct
 		startTime = time.Now().UTC()
 	}
 	return RecentActivity{
+		id:         id,
 		externalID: trimmed,
 		title:      strings.TrimSpace(title),
 		startTime:  startTime,
 	}, nil
+}
+
+// ID returns the numeric session ID.
+func (r RecentActivity) ID() int64 {
+	return r.id
 }
 
 // ExternalID returns the session external ID.

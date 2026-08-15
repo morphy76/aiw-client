@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/morphy76/aiw-client/pkg/aiw"
@@ -37,6 +38,7 @@ type Config struct {
 	BearerToken string
 	Tenant      string
 	DialogModel string
+	Username    string
 	ExternalID  string
 	RestoreID   string
 	Sandbox     bool
@@ -48,18 +50,32 @@ func parseFlags() Config {
 	token := flag.String("token", "", "Bearer PAT Token")
 	tenant := flag.String("tenant", "", "Tenant ID (x-cognitive-system)")
 	model := flag.String("model", "", "Target dialog model name (e.g. Rocchetto)")
-	externalID := flag.String("external-id", "", "External customer user ID")
+	user := flag.String("user", "", "Customer username (forms <tenant>-<username>-<model>)")
+	username := flag.String("username", "", "Alias for -user")
+	externalID := flag.String("external-id", "", "Explicit full External customer user ID")
 	restore := flag.String("restore", "", "Specific external ID to restore conversation history from")
 	sandbox := flag.Bool("sandbox", false, "Enable cognitive sandbox mode")
 	verbose := flag.Bool("verbose", false, "Enable verbose debug logs")
 
 	flag.Parse()
 
+	u := *user
+	if u == "" {
+		u = *username
+	}
+	if u == "" {
+		u = *externalID
+	}
+	if u == "" && *token != "" {
+		u = aiw.ExtractUsernameFromToken(*token)
+	}
+
 	return Config{
 		BaseURL:     *baseURL,
 		BearerToken: *token,
 		Tenant:      *tenant,
 		DialogModel: *model,
+		Username:    u,
 		ExternalID:  *externalID,
 		RestoreID:   *restore,
 		Sandbox:     *sandbox,
@@ -119,6 +135,13 @@ func ensureConfig(scanner *bufio.Scanner, cfg *Config) bool {
 				break
 			}
 			fmt.Println("❌ Bearer PAT Token is required.")
+		}
+	}
+
+	if cfg.Username == "" && cfg.BearerToken != "" {
+		extracted := aiw.ExtractUsernameFromToken(cfg.BearerToken)
+		if extracted != "" {
+			cfg.Username = extracted
 		}
 	}
 
@@ -208,58 +231,80 @@ func main() {
 	convService := client.Conversational()
 	printer := newTerminalPrinter()
 
-	// 2. Determine session ID (Start new vs Restore past session)
-	externalID, shouldRestore := resolveSessionIdentity(ctx, cfg, convService, scanner)
-	if externalID == "" {
-		fmt.Println("👋 Exiting.")
-		return
-	}
+	// Main session loop (allows returning to menu after /close)
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println("👋 Exiting.")
+			return
+		default:
+		}
 
-	// 3. Build the ConversationalContext
-	convCtx, err := aiw.NewConversationalContextBuilder().
-		WithContext(ctx).
-		WithExternalID(externalID).
-		WithTenant(cfg.Tenant).
-		WithDialogModel(cfg.DialogModel).
-		WithBearerToken(cfg.BearerToken).
-		WithSandbox(cfg.Sandbox).
-		WithBaseURL(cfg.BaseURL).
-		Build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to build ConversationalContext: %v\n", err)
-		os.Exit(1)
-	}
+		// 2. Determine session ID (Start new vs Restore past session)
+		externalID, shouldRestore := resolveSessionIdentity(ctx, cfg, convService, scanner)
+		if externalID == "" {
+			fmt.Println("👋 Exiting.")
+			return
+		}
 
-	// 4. If restoring, fetch previous messages and display history
-	if shouldRestore {
-		printer.Info(fmt.Sprintf("⏳ Restoring conversation history for '%s'...", externalID))
-		if history, err := convService.RestoreConversation(convCtx); err != nil {
-			printer.Error(fmt.Errorf("could not restore history: %w", err))
-		} else {
-			renderConversationHistory(history)
+		// Clear one-shot restore flag after first resolution
+		cfg.RestoreID = ""
+
+		// 3. Build the ConversationalContext
+		convCtx, err := aiw.NewConversationalContextBuilder().
+			WithContext(ctx).
+			WithExternalID(externalID).
+			WithTenant(cfg.Tenant).
+			WithDialogModel(cfg.DialogModel).
+			WithBearerToken(cfg.BearerToken).
+			WithSandbox(cfg.Sandbox).
+			WithBaseURL(cfg.BaseURL).
+			Build()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to build ConversationalContext: %v\n", err)
+			continue
+		}
+
+		// 4. If restoring, fetch previous messages and display history
+		if shouldRestore {
+			printer.Info(fmt.Sprintf("⏳ Restoring conversation history for '%s'...", externalID))
+			if history, err := convService.RestoreConversation(convCtx); err != nil {
+				printer.Error(fmt.Errorf("could not restore history: %w", err))
+			} else {
+				renderConversationHistory(history)
+			}
+		}
+
+		// 5. Open live SSE stream and register lifecycle callbacks
+		sessionReady, sessionClosed, err := openStream(convService, convCtx, printer, cfg.Verbose, logger)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to open live conversation: %v\n", err)
+			continue
+		}
+
+		// Wait for the server to establish dialog session
+		established := false
+		select {
+		case <-sessionReady:
+			established = true
+		case <-ctx.Done():
+			printer.Info("\n🛑 Connection canceled.")
+			return
+		case <-sessionClosed:
+			printer.Info("\n🛑 Session closed before establishment.")
+		}
+
+		if !established {
+			continue
+		}
+
+		// 6. Run interactive CLI input loop
+		exitApp := runInteractiveChatLoop(ctx, convService, convCtx, printer, scanner, sessionClosed, cfg.DialogModel)
+		if exitApp {
+			fmt.Println("👋 Exiting.")
+			return
 		}
 	}
-
-	// 5. Open live SSE stream and register lifecycle callbacks
-	sessionReady, sessionClosed, err := openStream(convService, convCtx, printer, cfg.Verbose, logger)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to open live conversation: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Wait for the server to establish dialog session
-	select {
-	case <-sessionReady:
-	case <-ctx.Done():
-		printer.Info("\n🛑 Connection canceled.")
-		return
-	case <-sessionClosed:
-		printer.Info("\n🛑 Session closed before establishment.")
-		return
-	}
-
-	// 6. Run interactive CLI input loop
-	runInteractiveChatLoop(ctx, convService, convCtx, printer, scanner, sessionClosed, cfg.DialogModel)
 }
 
 // -----------------------------------------------------------------------------
@@ -274,14 +319,14 @@ func resolveSessionIdentity(
 	scanner *bufio.Scanner,
 ) (externalID string, shouldRestore bool) {
 	if cfg.RestoreID != "" {
-		return cfg.RestoreID, true
+		return buildExternalID(cfg.Tenant, cfg.RestoreID, cfg.DialogModel), true
 	}
 
 	for {
 		fmt.Println("\nChoose session mode:")
 		fmt.Println("  [1] 🆕 Start a new conversation")
 		fmt.Println("  [2] 📋 List past sessions & select one to restore")
-		fmt.Println("  [3] 🔍 Restore conversation by External ID")
+		fmt.Println("  [3] 🔍 Restore conversation by Username / External ID")
 		fmt.Println("  [q] 🚪 Quit")
 		fmt.Print("\nChoice > ")
 
@@ -291,27 +336,13 @@ func resolveSessionIdentity(
 
 		switch strings.TrimSpace(scanner.Text()) {
 		case "1":
-			if cfg.ExternalID != "" {
-				fmt.Printf("Enter External ID [press Enter to use '%s']: ", cfg.ExternalID)
-				if scanner.Scan() {
-					val := strings.TrimSpace(scanner.Text())
-					if val != "" {
-						return val, false
-					}
-				}
-				return cfg.ExternalID, false
+			user := cfg.Username
+			if user == "" {
+				user = generateRandomUserID()
 			}
-
-			fmt.Print("Enter External ID (or press Enter to auto-generate): ")
-			if scanner.Scan() {
-				val := strings.TrimSpace(scanner.Text())
-				if val != "" {
-					return val, false
-				}
-			}
-			newID := generateRandomUserID()
-			fmt.Printf("🆕 Generated Session External ID: %s\n", newID)
-			return newID, false
+			extID := buildNewChatExternalID(cfg.Tenant, user, cfg.DialogModel)
+			fmt.Printf("🆕 Starting conversation with Session External ID: %s\n", extID)
+			return extID, false
 
 		case "2":
 			selectedID, ok := promptListAndSelectSession(ctx, cfg, convService, scanner)
@@ -321,14 +352,14 @@ func resolveSessionIdentity(
 			continue
 
 		case "3":
-			fmt.Print("Enter External ID to restore: ")
+			fmt.Print("Enter Username or External ID to restore: ")
 			if scanner.Scan() {
 				id := strings.TrimSpace(scanner.Text())
 				if id != "" {
-					return id, true
+					return buildExternalID(cfg.Tenant, id, cfg.DialogModel), true
 				}
 			}
-			fmt.Println("⚠️ No External ID provided.")
+			fmt.Println("⚠️ No Username / External ID provided.")
 			continue
 
 		case "q", "quit", "exit":
@@ -346,15 +377,14 @@ func promptListAndSelectSession(
 	convService aiw.ConversationalService,
 	scanner *bufio.Scanner,
 ) (string, bool) {
-	fmt.Print("Enter customer user ID prefix (or press Enter for all): ")
-	var filter string
-	if scanner.Scan() {
-		filter = strings.TrimSpace(scanner.Text())
+	filterExternalID := ""
+	if cfg.Username != "" {
+		filterExternalID = buildExternalID(cfg.Tenant, cfg.Username, cfg.DialogModel)
 	}
 
 	queryCtx, err := aiw.NewConversationalContextBuilder().
 		WithContext(ctx).
-		WithExternalID(filter).
+		WithExternalID(filterExternalID).
 		WithTenant(cfg.Tenant).
 		WithBearerToken(cfg.BearerToken).
 		WithBaseURL(cfg.BaseURL).
@@ -366,11 +396,16 @@ func promptListAndSelectSession(
 		return "", false
 	}
 
+	if filterExternalID != "" {
+		fmt.Printf("⏳ Retrieving past sessions for '%s'...\n", filterExternalID)
+	} else {
+		fmt.Println("⏳ Retrieving past sessions...")
+	}
+
 	sessions, err := convService.ListSessions(queryCtx, aiw.ListSessionsQuery{
-		AssistantName: cfg.DialogModel,
-		Limit:         10,
-		SortField:     "update_date",
-		SortOrder:     "DESC",
+		Limit:     10,
+		SortField: "update_date",
+		SortOrder: "DESC",
 	})
 	if err != nil {
 		fmt.Printf("❌ Failed to list sessions: %v\n", err)
@@ -389,7 +424,7 @@ func promptListAndSelectSession(
 		if title == "" {
 			title = "(no title)"
 		}
-		fmt.Printf("  [%d] %-30s | %s | %s\n", i+1, s.ExternalID, dateStr, title)
+		fmt.Printf("  [%d] (ID: %d) %-40s | %s | %s\n", i+1, s.ID, s.ExternalID, dateStr, title)
 	}
 
 	fmt.Print("\nSelect session number to restore (or Enter to cancel): ")
@@ -427,7 +462,7 @@ func openStream(
 	onOpen := func(c aiw.ConversationalContext) error {
 		printer.Info(fmt.Sprintf("🔗 Session Connected! Dialog ID: %s", c.DialogID()))
 		printer.Info("💡 Type a message and press Enter to chat.")
-		printer.Info("💡 Commands: '/history', '/sessions', '/help', '/clear', '/exit'")
+		printer.Info("💡 Commands: '/close', '/history', '/sessions', '/help', '/clear', '/exit'")
 		printer.Info("--------------------------------------------------------------------------------")
 		close(ready)
 		return nil
@@ -464,6 +499,14 @@ func openStream(
 // Interactive Chat Loop
 // -----------------------------------------------------------------------------
 
+type chatAction int
+
+const (
+	actionStayInChat chatAction = iota
+	actionReturnToMenu
+	actionExitApp
+)
+
 func runInteractiveChatLoop(
 	ctx context.Context,
 	convService aiw.ConversationalService,
@@ -472,7 +515,7 @@ func runInteractiveChatLoop(
 	scanner *bufio.Scanner,
 	sessionClosed <-chan struct{},
 	dialogModel string,
-) {
+) bool {
 	printer.Prompt()
 
 	inputCh := make(chan string)
@@ -495,11 +538,11 @@ func runInteractiveChatLoop(
 			printer.Info("\n🛑 Signal received. Closing conversation...")
 			_ = convService.CloseConversation(convCtx)
 			printer.Info("👋 Goodbye!")
-			return
+			return true
 
 		case <-sessionClosed:
-			printer.Info("\n👋 Session ended. Goodbye!")
-			return
+			printer.Info("\n👋 Session ended. Returning to menu...")
+			return false
 
 		case err := <-inputErrCh:
 			if err != io.EOF {
@@ -507,8 +550,7 @@ func runInteractiveChatLoop(
 			}
 			printer.Info("Closing conversation...")
 			_ = convService.CloseConversation(convCtx)
-			printer.Info("👋 Goodbye!")
-			return
+			return true
 
 		case input := <-inputCh:
 			text := strings.TrimSpace(input)
@@ -518,8 +560,14 @@ func runInteractiveChatLoop(
 			}
 
 			// Handle slash commands
-			if handleSlashCommand(convService, convCtx, printer, text, dialogModel) {
-				return
+			action := handleSlashCommand(convService, convCtx, printer, text, dialogModel)
+			switch action {
+			case actionExitApp:
+				return true
+			case actionReturnToMenu:
+				return false
+			case actionStayInChat:
+				// Continue in chat loop
 			}
 
 			// Dispatch customer message
@@ -530,22 +578,27 @@ func runInteractiveChatLoop(
 	}
 }
 
-// handleSlashCommand processes commands like /exit, /history, /sessions, /help. Returns true if application should exit.
+// handleSlashCommand processes commands like /close, /exit, /history, /sessions, /help.
 func handleSlashCommand(
 	convService aiw.ConversationalService,
 	convCtx aiw.ConversationalContext,
 	printer *terminalPrinter,
 	text string,
 	dialogModel string,
-) (shouldExit bool) {
+) chatAction {
 	lower := strings.ToLower(text)
 
 	switch lower {
+	case "/close", "close":
+		printer.Info("👋 Closing conversation and returning to menu...")
+		_ = convService.CloseConversation(convCtx)
+		return actionReturnToMenu
+
 	case "/exit", "exit", "/quit", "quit":
 		printer.Info("👋 Closing conversation session...")
 		_ = convService.CloseConversation(convCtx)
 		printer.Info("🔌 Session closed. Goodbye!")
-		return true
+		return actionExitApp
 
 	case "/history":
 		history, err := convService.RestoreConversation(convCtx)
@@ -555,7 +608,7 @@ func handleSlashCommand(
 			renderConversationHistory(history)
 		}
 		printer.Prompt()
-		return false
+		return actionStayInChat
 
 	case "/sessions":
 		sessions, err := convService.ListSessions(convCtx, aiw.ListSessionsQuery{
@@ -573,7 +626,7 @@ func handleSlashCommand(
 			printer.Info("")
 		}
 		printer.Prompt()
-		return false
+		return actionStayInChat
 
 	case "/help":
 		printer.Info("\nℹ️  Session Info & Available Commands:")
@@ -581,17 +634,17 @@ func handleSlashCommand(
 		printer.Info(fmt.Sprintf("  External ID : %s", convCtx.ExternalID()))
 		printer.Info(fmt.Sprintf("  Tenant      : %s", convCtx.Tenant()))
 		printer.Info(fmt.Sprintf("  Dialog Model: %s", convCtx.DialogModel()))
-		printer.Info("  Commands    : '/history' (view history), '/sessions' (list past chats), '/clear' (clear screen), '/exit' (quit)\n")
+		printer.Info("  Commands    : '/close' (close & return to menu), '/history' (view history), '/sessions' (list past chats), '/clear' (clear screen), '/exit' (quit application)\n")
 		printer.Prompt()
-		return false
+		return actionStayInChat
 
 	case "/clear":
 		fmt.Print("\033[H\033[2J")
 		printer.Prompt()
-		return false
+		return actionStayInChat
 
 	default:
-		return false
+		return actionStayInChat
 	}
 }
 
@@ -653,6 +706,24 @@ func generateRandomUserID() string {
 	return fmt.Sprintf("user_%d_%04d", time.Now().Unix(), rand.Intn(10000))
 }
 
+func buildExternalID(tenant, user, model string) string {
+	tenant = strings.TrimSpace(tenant)
+	user = strings.TrimSpace(user)
+	model = strings.TrimSpace(model)
+	if user == "" {
+		return ""
+	}
+	if strings.HasPrefix(user, tenant+"-") && strings.HasSuffix(user, "-"+model) {
+		return user
+	}
+	return fmt.Sprintf("%s-%s-%s", tenant, user, model)
+}
+
+func buildNewChatExternalID(tenant, user, model string) string {
+	base := buildExternalID(tenant, user, model)
+	return fmt.Sprintf("%s-%s", base, uuid.NewString())
+}
+
 func printBanner(cfg Config) {
 	fmt.Println("================================================================================")
 	fmt.Println("💬 AIW Interactive CLI Chat & Session Manager")
@@ -660,6 +731,10 @@ func printBanner(cfg Config) {
 	fmt.Printf("  Base URL    : %s\n", cfg.BaseURL)
 	fmt.Printf("  Tenant      : %s\n", cfg.Tenant)
 	fmt.Printf("  Dialog Model: %s\n", cfg.DialogModel)
+	if cfg.Username != "" {
+		fmt.Printf("  Username    : %s\n", cfg.Username)
+		fmt.Printf("  External ID : %s\n", buildExternalID(cfg.Tenant, cfg.Username, cfg.DialogModel))
+	}
 	fmt.Printf("  Sandbox     : %t\n", cfg.Sandbox)
 	if len(cfg.BearerToken) > 8 {
 		fmt.Printf("  Token       : %s...%s\n", cfg.BearerToken[:4], cfg.BearerToken[len(cfg.BearerToken)-4:])

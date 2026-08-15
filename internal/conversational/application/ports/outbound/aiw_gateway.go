@@ -40,9 +40,9 @@ type AIWGateway interface {
 	// CloseSession sends a DELETE request to /dialog/api/conversation/v1.0/{externalId}/{dialogId}.
 	CloseSession(ctx context.Context, cmd inbound.CloseConversationCommand, dialogID string) error
 
-	// ListSessions retrieves recent activity sessions for an external ID from /chat/sessions/{assistantName}.
+	// ListSessions retrieves recent activity sessions for an external ID from /dialogSession/v1.0/_fromFilter.
 	ListSessions(ctx context.Context, cmd inbound.ListSessionsCommand) ([]model.RecentActivity, error)
 
-	// GetSessionRecording retrieves past XML dialog recording data from /dialogSession/v1.0/_byExternalId/{externalId}.
+	// GetSessionRecording retrieves past XML dialog recording data from /dialogSession/v1.0/_withRecordingData.
 	GetSessionRecording(ctx context.Context, cmd inbound.RestoreConversationCommand) ([]model.Message, error)
 }

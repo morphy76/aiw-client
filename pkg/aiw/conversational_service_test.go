@@ -428,15 +428,36 @@ func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 
 func TestConversationalService_ListSessions(t *testing.T) {
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
-		assert.Equal(t, "/dialog/api/chat/sessions/RocchettoEmbeddingsV2", req.URL.Path)
-		assert.Equal(t, "user-456", req.URL.Query().Get("externalId"))
-		assert.Equal(t, "5", req.URL.Query().Get("numberOfSessionsToRetrieve"))
+		assert.Equal(t, http.MethodPost, req.Method)
+		assert.Equal(t, "/dialog/api/dialogSession/v1.0/_fromFilter", req.URL.Path)
+
+		bodyBytes, err := io.ReadAll(req.Body)
+		assert.NoError(t, err)
+		assert.Contains(t, string(bodyBytes), `"externalId":"user-456"`)
+		assert.Contains(t, string(bodyBytes), `"numberOfSessionsToRetrieve":5`)
+		assert.Contains(t, string(bodyBytes), `"withRecordingData":false`)
 
 		jsonResp := `[
 			{
-				"external_id": "user-456_sess_1",
-				"title": "Password reset inquiry",
-				"start_time": "2026-08-15T09:00:00Z"
+				"deleteDate": "1970-01-01",
+				"insertDate": "1970-01-01",
+				"updateDate": "1970-01-01",
+				"applicationNamespace": "default",
+				"callerInRole": false,
+				"closeTime": "1970-01-01",
+				"externalId": "user-456_sess_1",
+				"externalSystem": "string",
+				"language": "en",
+				"model": "RocchettoEmbeddingsV2",
+				"recording": true,
+				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Password reset inquiry</value></subItem></item></userTurn></session></recording>",
+				"sandbox": false,
+				"sessionId": "theSessionId",
+				"startTime": "2026-08-15 09:00:00",
+				"status": "CLOSED",
+				"authGroup": "string",
+				"id": 0,
+				"version": 0
 			}
 		]`
 		return &http.Response{
@@ -464,10 +485,16 @@ func TestConversationalService_ListSessions(t *testing.T) {
 
 func TestConversationalService_RestoreConversation(t *testing.T) {
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
-		assert.Equal(t, "/dialog/api/dialogSession/v1.0/_byExternalId/user-prev-77", req.URL.Path)
+		assert.Equal(t, http.MethodPost, req.Method)
+		assert.Equal(t, "/dialog/api/dialogSession/v1.0/_withRecordingData", req.URL.Path)
+
+		bodyBytes, err := io.ReadAll(req.Body)
+		assert.NoError(t, err)
+		assert.Equal(t, "[88]", string(bodyBytes))
 
 		jsonResp := `[
 			{
+				"id": 88,
 				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Can I return an item?</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:02.000\"><item id=\"u_m\"><subItem><value>{\"answer\":\"Yes, within 30 days.\",\"sources\":[{\"id\":\"p1\",\"title\":\"Return Policy\"}]}</value></subItem></item></systemTurn></session></recording>"
 			}
 		]`
@@ -483,7 +510,7 @@ func TestConversationalService_RestoreConversation(t *testing.T) {
 		Build()
 	require.NoError(t, err)
 
-	convCtx := aiw.NewConversationalContext(context.Background(), "user-prev-77")
+	convCtx := aiw.NewConversationalContext(context.Background(), "88")
 	messages, err := convSvc.RestoreConversation(convCtx)
 	require.NoError(t, err)
 	require.Len(t, messages, 2)

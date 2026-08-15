@@ -304,6 +304,7 @@ func (a *conversationalServiceAdapter) ListSessions(
 	activities := make([]RecentActivity, 0, len(domainActs))
 	for _, act := range domainActs {
 		activities = append(activities, RecentActivity{
+			ID:         act.ID(),
 			ExternalID: act.ExternalID(),
 			Title:      act.Title(),
 			StartTime:  act.StartTime(),

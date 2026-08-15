@@ -7,6 +7,17 @@
 
 ---
 
+## Objective & Scope
+
+`aiw-client` is **not** an exhaustive, low-level administrative client API for the AIW platform. Instead, it aims to be a **high-level, use-case-focused client library** tailored specifically for end-user runtime applications rather than administrative operations:
+
+- **End-User Focused**: Designed for end-user runtime purposes (e.g. streaming live chats, restoring conversation turns, querying search results) rather than platform management, model creation, or tenant provisioning.
+- **Use-Case Driven**:
+  - **Sfera**: Conversational use cases (real-time Server-Sent Events streaming, interactive messaging, dialog session restoration, structured answer & citation parsing).
+  - **Prisma**: Search and retrieval use cases.
+
+---
+
 ## Architecture Overview
 
 ```
@@ -43,8 +54,8 @@ github.com/morphy76/aiw-client/
 - **Facade Pattern & Fluent ClientBuilder**: Clean top-level entry point exposing conversational and platform services, constructed via `NewClientBuilder()` or functional options `New()`.
 - **Flexible Dependency Injection**: Inject custom `ConversationalService` implementations or pre-configured `ConversationalServiceBuilder` instances directly into the facade.
 - **SSE Stream Protocol**: Replicates full Server-Sent Events (SSE) protocol from the AIW platform (`/dialog/api/conversation/v1.0/live/${externalId}?with_dialog_model=${dialogModel}`), streaming events asynchronously and dispatching to registered callbacks.
-- **Conversation Restoration & History**: Restore past conversational turns and citation sources from AIW recording data (`/dialog/api/dialogSession/v1.0/_byExternalId/${externalId}`).
-- **Session & Activity Listing**: List and paginate past user sessions and activities (`/dialog/api/chat/sessions/${dialogModel}`).
+- **Conversation Restoration & History**: Restore past conversational turns and citation sources from AIW recording data (`/dialog/api/dialogSession/v1.0/_withRecordingData`).
+- **Session & Activity Listing**: List and paginate past user sessions and activities (`/dialog/api/dialogSession/v1.0/_fromFilter`).
 - **Attachments & Structured Answers**: Support message attachments and automatic parsing of structured bot answers with supporting document citations (`Source`).
 - **Reactive Lifecycle & Message Callbacks**:
   - `OnOpenFn`: Called when `lifecycle.event == "created"` with session `dialog_id`.

@@ -249,8 +249,8 @@ func TestConversationalService_ListSessions(t *testing.T) {
 			Limit:         10,
 		}
 
-		act1, _ := model.NewRecentActivity("user-alpha-session-1", "Account Support", time.Now().UTC())
-		act2, _ := model.NewRecentActivity("user-alpha-session-2", "Payment Inquiry", time.Now().UTC())
+		act1, _ := model.NewRecentActivity(101, "user-alpha-session-1", "Account Support", time.Now().UTC())
+		act2, _ := model.NewRecentActivity(102, "user-alpha-session-2", "Payment Inquiry", time.Now().UTC())
 
 		gateway.On("ListSessions", ctx, cmd).Return([]model.RecentActivity{act1, act2}, nil)
 

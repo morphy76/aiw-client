@@ -300,25 +300,48 @@ func TestHTTPGateway_CloseSession(t *testing.T) {
 }
 
 func TestHTTPGateway_ListSessions(t *testing.T) {
+	var receivedMethod string
 	var receivedPath string
-	var receivedQuery string
+	var receivedBody []byte
 	var receivedHeaders http.Header
 
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		receivedMethod = req.Method
 		receivedPath = req.URL.Path
-		receivedQuery = req.URL.RawQuery
 		receivedHeaders = req.Header.Clone()
+		var err error
+		receivedBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
 
 		jsonResp := `[
 			{
-				"external_id": "session-1",
-				"title": "Account support inquiry",
-				"start_time": "2026-08-15T09:00:00Z"
+				"deleteDate": "1970-01-01",
+				"insertDate": "1970-01-01",
+				"updateDate": "1970-01-01",
+				"applicationNamespace": "almawave.com",
+				"callerInRole": false,
+				"closeTime": "1970-01-01",
+				"externalId": "session-1",
+				"externalSystem": "string",
+				"language": "en",
+				"model": "RocchettoEmbeddingsV2",
+				"recording": true,
+				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Account support inquiry</value></subItem></item></userTurn></session></recording>",
+				"sandbox": false,
+				"sessionId": "theSessionId-1",
+				"startTime": "2026-08-15 09:00:00",
+				"status": "CLOSED",
+				"authGroup": "string",
+				"id": 0,
+				"version": 0
 			},
 			{
-				"external_id": "session-2",
-				"title": "Order tracking issue",
-				"start_time": "2026-08-14T15:30:00Z"
+				"id": 102,
+				"externalId": "session-2",
+				"insertDate": "2026-08-14 15:30:00",
+				"recordingData": "<recording><session><userTurn dateTime=\"14/08/2026 15:30:00.000\"><item id=\"u_u\"><subItem><value>Order tracking issue</value></subItem></item></userTurn></session></recording>"
 			}
 		]`
 		return &http.Response{
@@ -337,6 +360,8 @@ func TestHTTPGateway_ListSessions(t *testing.T) {
 		SortField:     "update_date",
 		SortOrder:     "DESC",
 		BearerToken:   "pat-token-list",
+		Tenant:        "almawave.com",
+		Sandbox:       false,
 	}
 
 	activities, err := gw.ListSessions(context.Background(), cmd)
@@ -348,24 +373,34 @@ func TestHTTPGateway_ListSessions(t *testing.T) {
 	assert.Equal(t, "session-2", activities[1].ExternalID())
 	assert.Equal(t, "Order tracking issue", activities[1].Title())
 
-	assert.Equal(t, "/dialog/api/chat/sessions/RocchettoEmbeddingsV2", receivedPath)
-	assert.Contains(t, receivedQuery, "externalId=user-alpha")
-	assert.Contains(t, receivedQuery, "numberOfSessionsToRetrieve=5")
-	assert.Contains(t, receivedQuery, "sortField=update_date")
-	assert.Contains(t, receivedQuery, "sortOrder=DESC")
+	assert.Equal(t, http.MethodPost, receivedMethod)
+	assert.Equal(t, "/dialog/api/dialogSession/v1.0/_fromFilter", receivedPath)
 	assert.Equal(t, "Bearer pat-token-list", receivedHeaders.Get("Authorization"))
+	assert.Equal(t, "live:almawave.com", receivedHeaders.Get("x-cognitive-system"))
+
+	expectedBody := `{"numberOfSessionsToRetrieve":5,"externalId":"user-alpha","withRecordingData":false,"sortField":"update_date","sortOrder":"DESC"}`
+	assert.JSONEq(t, expectedBody, string(receivedBody))
 }
 
 func TestHTTPGateway_GetSessionRecording(t *testing.T) {
+	var receivedMethod string
 	var receivedPath string
+	var receivedBody []byte
 	var receivedHeaders http.Header
 
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		receivedMethod = req.Method
 		receivedPath = req.URL.Path
 		receivedHeaders = req.Header.Clone()
+		var err error
+		receivedBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
 
 		jsonResp := `[
 			{
+				"id": 101,
 				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Hello previous session</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:01.000\"><item id=\"u_m\"><subItem><value>{\"answer\":\"Restored response\",\"sources\":[]}</value></subItem></item></systemTurn></session></recording>"
 			}
 		]`
@@ -378,8 +413,9 @@ func TestHTTPGateway_GetSessionRecording(t *testing.T) {
 
 	gw := outbound.NewHTTPGateway(client, "https://dev.lab.aiwave.io")
 	cmd := inbound.RestoreConversationCommand{
-		ExternalID:  "session-restore-1",
+		SessionIDs:  []int64{101},
 		BearerToken: "pat-token-rec",
+		Tenant:      "almawave.com",
 	}
 
 	messages, err := gw.GetSessionRecording(context.Background(), cmd)
@@ -392,7 +428,10 @@ func TestHTTPGateway_GetSessionRecording(t *testing.T) {
 	require.NotNil(t, messages[1].Answer())
 	assert.Equal(t, "Restored response", messages[1].Answer().Text())
 
-	assert.Equal(t, "/dialog/api/dialogSession/v1.0/_byExternalId/session-restore-1", receivedPath)
+	assert.Equal(t, http.MethodPost, receivedMethod)
+	assert.Equal(t, "/dialog/api/dialogSession/v1.0/_withRecordingData", receivedPath)
+	assert.Equal(t, "[101]", string(receivedBody))
 	assert.Equal(t, "Bearer pat-token-rec", receivedHeaders.Get("Authorization"))
+	assert.Equal(t, "live:almawave.com", receivedHeaders.Get("x-cognitive-system"))
 }
 
