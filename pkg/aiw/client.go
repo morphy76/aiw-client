@@ -26,8 +26,10 @@ type clientFacade struct {
 func New(opts ...Option) (Client, error) {
 	builder := NewClientBuilder()
 	cfg := Config{
-		Logger:  builder.logger,
-		Timeout: builder.timeout,
+		Logger:     builder.logger,
+		Timeout:    builder.timeout,
+		HTTPClient: builder.httpClient,
+		BaseURL:    builder.baseURL,
 	}
 
 	for _, opt := range opts {
@@ -40,6 +42,8 @@ func New(opts ...Option) (Client, error) {
 		WithLogger(cfg.Logger).
 		WithTimeout(cfg.Timeout).
 		WithConversationalService(cfg.ConversationalService).
+		WithHTTPClient(cfg.HTTPClient).
+		WithBaseURL(cfg.BaseURL).
 		Build()
 }
 

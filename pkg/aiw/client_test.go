@@ -51,17 +51,11 @@ func TestClient_LifecycleAndConversationalFlow(t *testing.T) {
 
 	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
 
-	convService, err := aiw.NewConversationalServiceBuilder().
-		WithHTTPClient(clientMock).
-		WithBaseURL("https://dev.lab.aiwave.io").
-		WithLogger(logger).
-		WithTimeout(5 * time.Second).
-		Build()
-	require.NoError(t, err)
-
 	client, err := aiw.New(
-		aiw.WithConversationalService(convService),
+		aiw.WithHTTPClient(clientMock),
+		aiw.WithBaseURL("https://dev.lab.aiwave.io"),
 		aiw.WithLogger(logger),
+		aiw.WithTimeout(5*time.Second),
 	)
 	require.NoError(t, err)
 	require.NotNil(t, client)
@@ -118,12 +112,11 @@ func TestClient_LifecycleAndConversationalFlow(t *testing.T) {
 }
 
 func TestClient_ErrorHandlingInFlow(t *testing.T) {
-	convService, err := aiw.NewConversationalServiceBuilder().
-		WithInMemoryGateway().
-		Build()
-	require.NoError(t, err)
+	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
 
-	client, err := aiw.New(aiw.WithConversationalService(convService))
+	client, err := aiw.New(aiw.WithHTTPClient(clientMock))
 	require.NoError(t, err)
 	defer func() {
 		_ = client.Close()
@@ -148,3 +141,4 @@ func TestClient_ErrorHandlingInFlow(t *testing.T) {
 	assert.Error(t, err)
 	assert.NotNil(t, errReported)
 }
+

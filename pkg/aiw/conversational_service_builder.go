@@ -8,7 +8,6 @@ import (
 	"github.com/rs/zerolog"
 
 	outboundAdapters "github.com/morphy76/aiw-client/internal/conversational/adapters/outbound"
-	outboundPorts "github.com/morphy76/aiw-client/internal/conversational/application/ports/outbound"
 	appService "github.com/morphy76/aiw-client/internal/conversational/application/service"
 )
 
@@ -23,7 +22,6 @@ type ConversationalServiceBuilder struct {
 	baseURL    string
 	logger     zerolog.Logger
 	timeout    time.Duration
-	useMock    bool
 }
 
 // NewConversationalServiceBuilder creates a new ConversationalServiceBuilder initialized with default configurations.
@@ -63,25 +61,14 @@ func (b *ConversationalServiceBuilder) WithTimeout(timeout time.Duration) *Conve
 	return b
 }
 
-// WithInMemoryGateway forces the service to use an in-memory test gateway instead of real HTTP/SSE.
-func (b *ConversationalServiceBuilder) WithInMemoryGateway() *ConversationalServiceBuilder {
-	b.useMock = true
-	return b
-}
-
 // Build wires up internal components and returns a ready-to-use ConversationalService.
 func (b *ConversationalServiceBuilder) Build() (ConversationalService, error) {
 	repo := outboundAdapters.NewInMemoryConversationRepository()
-
-	var gateway outboundPorts.AIWGateway
-	if b.useMock {
-		gateway = outboundAdapters.NewInMemoryAIWGateway()
-	} else {
-		gateway = outboundAdapters.NewHTTPSSEGateway(b.httpClient, b.baseURL)
-	}
+	gateway := outboundAdapters.NewHTTPSSEGateway(b.httpClient, b.baseURL)
 
 	useCase := appService.NewConversationalService(repo, gateway)
 	adapter := newConversationalServiceAdapter(useCase)
 
 	return adapter, nil
 }
+

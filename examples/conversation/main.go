@@ -113,7 +113,7 @@ func main() {
 
 	if *patFlag == "" {
 		fmt.Println("⚠️  Warning: PAT (Bearer Token) is missing. Live requests may return 401 Unauthorized.")
-		fmt.Println("   Use -token <PAT> or -mock to test offline.")
+		fmt.Println("   Use -token <PAT> to authenticate.")
 	}
 
 	// 3. Setup root context with OS signals
@@ -124,6 +124,7 @@ func main() {
 	var client aiw.Client
 	var err error
 	client, err = aiw.New(
+		aiw.WithBaseURL(*baseURLFlag),
 		aiw.WithLogger(logger),
 		aiw.WithTimeout(60*time.Second),
 	)

@@ -174,9 +174,6 @@ An interactive terminal chat application is included in `examples/conversation`:
 ```bash
 # Run against live AIW platform with PAT token
 go run ./examples/conversation -token "your-pat-token" -tenant "default" -model "RocchettoEmbeddingsV2"
-
-# Run offline in mock mode
-go run ./examples/conversation -mock
 ```
 
 Commands available during the chat session:

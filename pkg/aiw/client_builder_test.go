@@ -40,8 +40,12 @@ func TestClientBuilder_NewBuilderAlias(t *testing.T) {
 }
 
 func TestClientBuilder_WithConversationalService(t *testing.T) {
+	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+
 	mockSvc, err := aiw.NewConversationalServiceBuilder().
-		WithInMemoryGateway().
+		WithHTTPClient(clientMock).
 		Build()
 	require.NoError(t, err)
 
@@ -55,17 +59,15 @@ func TestClientBuilder_WithConversationalService(t *testing.T) {
 	}()
 
 	assert.Same(t, mockSvc, client.Conversational())
-
-	// Test conversational flow through injected service
-	convCtx := aiw.NewConversationalContext(context.Background(), "user-inject-test")
-	err = client.Conversational().OpenConversation(convCtx, nil, nil, nil, nil, nil)
-	require.NoError(t, err)
-	assert.NotEmpty(t, convCtx.DialogID())
 }
 
 func TestClientBuilder_WithConversationalServiceBuilder(t *testing.T) {
+	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+
 	convBuilder := aiw.NewConversationalServiceBuilder().
-		WithInMemoryGateway().
+		WithHTTPClient(clientMock).
 		WithTimeout(10 * time.Second)
 
 	client, err := aiw.NewClientBuilder().
@@ -79,11 +81,6 @@ func TestClientBuilder_WithConversationalServiceBuilder(t *testing.T) {
 	}()
 
 	require.NotNil(t, client.Conversational())
-
-	convCtx := aiw.NewConversationalContext(context.Background(), "user-builder-inject-test")
-	err = client.Conversational().OpenConversation(convCtx, nil, nil, nil, nil, nil)
-	require.NoError(t, err)
-	assert.NotEmpty(t, convCtx.DialogID())
 }
 
 func TestClientBuilder_WithCustomDependenciesAndFlow(t *testing.T) {
@@ -147,18 +144,22 @@ func TestClientBuilder_WithCustomDependenciesAndFlow(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestClientBuilder_WithInMemoryGateway(t *testing.T) {
-	client, err := aiw.NewClientBuilder().
-		WithInMemoryGateway().
-		Build()
+func TestClientBuilder_WithOptionsDirectly(t *testing.T) {
+	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+
+	client, err := aiw.New(
+		aiw.WithHTTPClient(clientMock),
+		aiw.WithBaseURL("https://api.aiwave.io"),
+		aiw.WithTimeout(20*time.Second),
+	)
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	defer func() {
 		require.NoError(t, client.Close())
 	}()
 
-	convCtx := aiw.NewConversationalContext(context.Background(), "user-mock-gateway")
-	err = client.Conversational().OpenConversation(convCtx, nil, nil, nil, nil, nil)
-	require.NoError(t, err)
-	assert.NotEmpty(t, convCtx.DialogID())
+	require.NotNil(t, client.Conversational())
 }
+

@@ -15,7 +15,6 @@ type ClientBuilder struct {
 	convBuilder *ConversationalServiceBuilder
 	httpClient  HTTPClient
 	baseURL     string
-	useMock     bool
 }
 
 // NewClientBuilder creates a new ClientBuilder initialized with sensible defaults.
@@ -71,12 +70,6 @@ func (b *ClientBuilder) WithBaseURL(baseURL string) *ClientBuilder {
 	return b
 }
 
-// WithInMemoryGateway configures the client to construct in-memory conversational services for testing.
-func (b *ClientBuilder) WithInMemoryGateway() *ClientBuilder {
-	b.useMock = true
-	return b
-}
-
 // Build validates configurations, instantiates any unprovided services, and returns an initialized Client facade.
 func (b *ClientBuilder) Build() (Client, error) {
 	convSvc := b.convSvc
@@ -98,9 +91,6 @@ func (b *ClientBuilder) Build() (Client, error) {
 			if b.baseURL != "" {
 				builder.WithBaseURL(b.baseURL)
 			}
-			if b.useMock {
-				builder.WithInMemoryGateway()
-			}
 
 			var err error
 			convSvc, err = builder.Build()
@@ -116,3 +106,4 @@ func (b *ClientBuilder) Build() (Client, error) {
 		convSvc: convSvc,
 	}, nil
 }
+

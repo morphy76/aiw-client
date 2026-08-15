@@ -2,20 +2,35 @@ package aiw_test
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
 	"testing"
 
 	"github.com/morphy76/aiw-client/pkg/aiw"
 )
 
 func BenchmarkClient_AddCustomerMessage(b *testing.B) {
-	convService, err := aiw.NewConversationalServiceBuilder().
-		WithInMemoryGateway().
-		Build()
-	if err != nil {
-		b.Fatalf("failed to build conversational service: %v", err)
-	}
+	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Accept") == "text/event-stream" {
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dialog-bench-101\"}}\n\n")
+			}()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       pr,
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(http.NoBody),
+		}, nil
+	})
 
-	client, err := aiw.New(aiw.WithConversationalService(convService))
+	client, err := aiw.New(aiw.WithHTTPClient(clientMock))
 	if err != nil {
 		b.Fatalf("failed to create client: %v", err)
 	}
@@ -55,7 +70,6 @@ func BenchmarkClientBuilder_Build(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		client, err := aiw.NewClientBuilder().
-			WithInMemoryGateway().
 			Build()
 		if err != nil {
 			b.Fatalf("build error: %v", err)

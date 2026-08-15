@@ -238,8 +238,12 @@ func TestConversationalService_OnBotMessagePanicRecovery(t *testing.T) {
 }
 
 func TestConversationalService_AddCustomerMessageWithoutOpen(t *testing.T) {
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+
 	convSvc, err := aiw.NewConversationalServiceBuilder().
-		WithInMemoryGateway().
+		WithHTTPClient(client).
 		Build()
 	require.NoError(t, err)
 
@@ -250,8 +254,12 @@ func TestConversationalService_AddCustomerMessageWithoutOpen(t *testing.T) {
 }
 
 func TestConversationalService_EmptyExternalID(t *testing.T) {
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+
 	convSvc, err := aiw.NewConversationalServiceBuilder().
-		WithInMemoryGateway().
+		WithHTTPClient(client).
 		Build()
 	require.NoError(t, err)
 

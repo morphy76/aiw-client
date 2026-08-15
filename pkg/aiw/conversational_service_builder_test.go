@@ -16,8 +16,25 @@ import (
 )
 
 func TestConversationalServiceBuilder_BuildDefault(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+
+	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Accept") == "text/event-stream" {
+			go func() {
+				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"diag-builder-default\"}}\n\n")
+			}()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       pr,
+			}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+
 	svc, err := aiw.NewConversationalServiceBuilder().
-		WithInMemoryGateway().
+		WithHTTPClient(clientMock).
 		Build()
 	require.NoError(t, err)
 	require.NotNil(t, svc)
@@ -25,7 +42,7 @@ func TestConversationalServiceBuilder_BuildDefault(t *testing.T) {
 	ctx := aiw.NewConversationalContext(context.Background(), "user-builder-test")
 	err = svc.OpenConversation(ctx, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
-	assert.NotEmpty(t, ctx.DialogID())
+	assert.Equal(t, "diag-builder-default", ctx.DialogID())
 
 	err = svc.AddCustomerMessage(ctx, "Hello from builder test")
 	require.NoError(t, err)
@@ -33,11 +50,11 @@ func TestConversationalServiceBuilder_BuildDefault(t *testing.T) {
 
 func TestConversationalServiceBuilder_WithCustomDependencies(t *testing.T) {
 	pr, pw := io.Pipe()
+	defer pw.Close()
 
 	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 		if req.Header.Get("Accept") == "text/event-stream" {
 			go func() {
-				defer pw.Close()
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"diag-builder-101\"}}\n\n")
 			}()
 			return &http.Response{
