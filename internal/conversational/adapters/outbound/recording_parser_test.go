@@ -81,3 +81,52 @@ func TestParseRecordingData_EmptyOrInvalidXML(t *testing.T) {
 	_, err = outbound.ParseRecordingData("<invalid<xml")
 	assert.Error(t, err)
 }
+
+func TestParseRecordingData_UTF16EncodingHeader(t *testing.T) {
+	xmlData := `<?xml version="1.0" encoding="UTF-16"?>
+<recording>
+  <session>
+    <userTurn dateTime="15/08/2026 09:00:00.000">
+      <item id="u_u">
+        <subItem><value>Hello in UTF-16</value></subItem>
+      </item>
+    </userTurn>
+    <systemTurn dateTime="15/08/2026 09:00:01.000">
+      <item id="u_m">
+        <subItem><value>Response in UTF-16</value></subItem>
+      </item>
+    </systemTurn>
+  </session>
+</recording>`
+
+	messages, err := outbound.ParseRecordingData(xmlData)
+	require.NoError(t, err)
+	require.Len(t, messages, 2)
+	assert.Equal(t, model.SenderCustomer, messages[0].Sender())
+	assert.Equal(t, "Hello in UTF-16", messages[0].Content())
+	assert.Equal(t, model.SenderAgent, messages[1].Sender())
+	assert.Equal(t, "Response in UTF-16", messages[1].Content())
+}
+
+func TestParseRecordingData_VariousEncodings(t *testing.T) {
+	encodings := []string{"utf-16", "UTF-16", "ISO-8859-1", "windows-1252", "US-ASCII", "utf-8"}
+	for _, enc := range encodings {
+		t.Run(enc, func(t *testing.T) {
+			xmlData := `<?xml version="1.0" encoding="` + enc + `"?>
+<recording>
+  <session>
+    <userTurn dateTime="15/08/2026 09:00:00.000">
+      <item id="u_u">
+        <subItem><value>Test ` + enc + `</value></subItem>
+      </item>
+    </userTurn>
+  </session>
+</recording>`
+			messages, err := outbound.ParseRecordingData(xmlData)
+			require.NoError(t, err)
+			require.Len(t, messages, 1)
+			assert.Equal(t, "Test "+enc, messages[0].Content())
+		})
+	}
+}
+

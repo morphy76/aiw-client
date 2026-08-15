@@ -35,3 +35,5 @@ go.work.sum
 .DS_Store
 *.DS_Store
 
+examples/conversation/tkn
+examples/conversation/main

@@ -1,6 +1,6 @@
 // Package main demonstrates a full-featured, interactive command-line chat application
 // using the aiw-client library. It highlights:
-// 1. Client initialization and ConversationalContext construction.
+// 1. Client initialization and ConversationalContext construction via CLI flags and interactive prompts.
 // 2. Listing past conversation sessions with ListSessions().
 // 3. Restoring previous chat history with RestoreConversation().
 // 4. Reactive SSE streaming with OpenConversation() and real-time callbacks.
@@ -43,15 +43,15 @@ type Config struct {
 	Verbose     bool
 }
 
-func loadConfig() Config {
-	baseURL := flag.String("url", getEnvOrDefault("BASE_URL", "https://dev.lab.aiwave.io"), "AIW platform base URL")
-	token := flag.String("token", getEnvOrDefault("PAT", os.Getenv("BEARER_TOKEN")), "Bearer PAT Token")
-	tenant := flag.String("tenant", getEnvOrDefault("TENANT", "almawave.com"), "Tenant ID (x-cognitive-system)")
-	model := flag.String("model", getEnvOrDefault("DIALOG_MODEL_NAME", "RocchettoEmbeddingsV2"), "Target dialog model name")
-	externalID := flag.String("external-id", getEnvOrDefault("EXTERNAL_ID", ""), "External customer user ID")
+func parseFlags() Config {
+	baseURL := flag.String("url", "https://portal.aiwave.ai", "AIW platform base URL (e.g. https://portal.aiwave.ai)")
+	token := flag.String("token", "", "Bearer PAT Token")
+	tenant := flag.String("tenant", "", "Tenant ID (x-cognitive-system)")
+	model := flag.String("model", "", "Target dialog model name (e.g. Rocchetto)")
+	externalID := flag.String("external-id", "", "External customer user ID")
 	restore := flag.String("restore", "", "Specific external ID to restore conversation history from")
-	sandbox := flag.Bool("sandbox", getEnvBoolOrDefault("SANDBOX_MODE", false), "Enable cognitive sandbox mode")
-	verbose := flag.Bool("verbose", getEnvBoolOrDefault("DEBUG", false), "Enable verbose debug logs")
+	sandbox := flag.Bool("sandbox", false, "Enable cognitive sandbox mode")
+	verbose := flag.Bool("verbose", false, "Enable verbose debug logs")
 
 	flag.Parse()
 
@@ -65,6 +65,64 @@ func loadConfig() Config {
 		Sandbox:     *sandbox,
 		Verbose:     *verbose,
 	}
+}
+
+func ensureConfig(scanner *bufio.Scanner, cfg *Config) bool {
+	if strings.TrimSpace(cfg.BaseURL) == "" {
+		fmt.Print("Enter AIW Base URL [https://portal.aiwave.ai]: ")
+		if !scanner.Scan() {
+			return false
+		}
+		val := strings.TrimSpace(scanner.Text())
+		if val == "" {
+			val = "https://portal.aiwave.ai"
+		}
+		cfg.BaseURL = val
+	}
+
+	if strings.TrimSpace(cfg.Tenant) == "" {
+		for {
+			fmt.Print("Enter Tenant ID: ")
+			if !scanner.Scan() {
+				return false
+			}
+			val := strings.TrimSpace(scanner.Text())
+			if val != "" {
+				cfg.Tenant = val
+				break
+			}
+			fmt.Println("❌ Tenant ID is required.")
+		}
+	}
+
+	if strings.TrimSpace(cfg.DialogModel) == "" {
+		fmt.Print("Enter Dialog Model Name [Rocchetto]: ")
+		if !scanner.Scan() {
+			return false
+		}
+		val := strings.TrimSpace(scanner.Text())
+		if val == "" {
+			val = "Rocchetto"
+		}
+		cfg.DialogModel = val
+	}
+
+	if strings.TrimSpace(cfg.BearerToken) == "" {
+		for {
+			fmt.Print("Enter Bearer PAT Token: ")
+			if !scanner.Scan() {
+				return false
+			}
+			val := strings.TrimSpace(scanner.Text())
+			if val != "" {
+				cfg.BearerToken = val
+				break
+			}
+			fmt.Println("❌ Bearer PAT Token is required.")
+		}
+	}
+
+	return true
 }
 
 // -----------------------------------------------------------------------------
@@ -119,9 +177,16 @@ func (p *terminalPrinter) Info(msg string) {
 // -----------------------------------------------------------------------------
 
 func main() {
-	cfg := loadConfig()
-	logger := configureLogger(cfg.Verbose)
+	cfg := parseFlags()
+	scanner := bufio.NewScanner(os.Stdin)
 
+	// Ensure core configuration parameters are provided before entering the app
+	if !ensureConfig(scanner, &cfg) {
+		fmt.Println("👋 Exiting.")
+		return
+	}
+
+	logger := configureLogger(cfg.Verbose)
 	printBanner(cfg)
 
 	// Listen for OS interrupt / termination signals
@@ -142,7 +207,6 @@ func main() {
 
 	convService := client.Conversational()
 	printer := newTerminalPrinter()
-	scanner := bufio.NewScanner(os.Stdin)
 
 	// 2. Determine session ID (Start new vs Restore past session)
 	externalID, shouldRestore := resolveSessionIdentity(ctx, cfg, convService, scanner)
@@ -212,53 +276,75 @@ func resolveSessionIdentity(
 	if cfg.RestoreID != "" {
 		return cfg.RestoreID, true
 	}
-	if cfg.ExternalID != "" {
-		return cfg.ExternalID, false
-	}
 
-	fmt.Println("\nChoose session mode:")
-	fmt.Println("  [1] 🆕 Start a new conversation")
-	fmt.Println("  [2] 📋 List past sessions & select one to restore")
-	fmt.Println("  [3] 🔍 Restore conversation by External ID")
-	fmt.Println("  [q] 🚪 Quit")
-	fmt.Print("\nChoice > ")
+	for {
+		fmt.Println("\nChoose session mode:")
+		fmt.Println("  [1] 🆕 Start a new conversation")
+		fmt.Println("  [2] 📋 List past sessions & select one to restore")
+		fmt.Println("  [3] 🔍 Restore conversation by External ID")
+		fmt.Println("  [q] 🚪 Quit")
+		fmt.Print("\nChoice > ")
 
-	if !scanner.Scan() {
-		return "", false
-	}
-
-	switch strings.TrimSpace(scanner.Text()) {
-	case "1":
-		newID := generateRandomUserID()
-		fmt.Printf("🆕 Generated new Session External ID: %s\n", newID)
-		return newID, false
-
-	case "2":
-		return promptListAndSelectSession(ctx, convService, scanner, cfg.DialogModel)
-
-	case "3":
-		fmt.Print("Enter External ID to restore: ")
-		if scanner.Scan() {
-			id := strings.TrimSpace(scanner.Text())
-			if id != "" {
-				return id, true
-			}
+		if !scanner.Scan() {
+			return "", false
 		}
-		return generateRandomUserID(), false
 
-	case "q", "quit", "exit":
-		return "", false
+		switch strings.TrimSpace(scanner.Text()) {
+		case "1":
+			if cfg.ExternalID != "" {
+				fmt.Printf("Enter External ID [press Enter to use '%s']: ", cfg.ExternalID)
+				if scanner.Scan() {
+					val := strings.TrimSpace(scanner.Text())
+					if val != "" {
+						return val, false
+					}
+				}
+				return cfg.ExternalID, false
+			}
 
-	default:
-		return generateRandomUserID(), false
+			fmt.Print("Enter External ID (or press Enter to auto-generate): ")
+			if scanner.Scan() {
+				val := strings.TrimSpace(scanner.Text())
+				if val != "" {
+					return val, false
+				}
+			}
+			newID := generateRandomUserID()
+			fmt.Printf("🆕 Generated Session External ID: %s\n", newID)
+			return newID, false
+
+		case "2":
+			selectedID, ok := promptListAndSelectSession(ctx, cfg, convService, scanner)
+			if ok {
+				return selectedID, true
+			}
+			continue
+
+		case "3":
+			fmt.Print("Enter External ID to restore: ")
+			if scanner.Scan() {
+				id := strings.TrimSpace(scanner.Text())
+				if id != "" {
+					return id, true
+				}
+			}
+			fmt.Println("⚠️ No External ID provided.")
+			continue
+
+		case "q", "quit", "exit":
+			return "", false
+
+		default:
+			fmt.Println("❌ Invalid choice. Please select 1, 2, 3, or q.")
+		}
 	}
 }
 
 func promptListAndSelectSession(
 	ctx context.Context,
+	cfg Config,
 	convService aiw.ConversationalService,
 	scanner *bufio.Scanner,
-	dialogModel string,
 ) (string, bool) {
 	fmt.Print("Enter customer user ID prefix (or press Enter for all): ")
 	var filter string
@@ -266,21 +352,34 @@ func promptListAndSelectSession(
 		filter = strings.TrimSpace(scanner.Text())
 	}
 
-	queryCtx := aiw.NewConversationalContext(ctx, filter)
+	queryCtx, err := aiw.NewConversationalContextBuilder().
+		WithContext(ctx).
+		WithExternalID(filter).
+		WithTenant(cfg.Tenant).
+		WithBearerToken(cfg.BearerToken).
+		WithBaseURL(cfg.BaseURL).
+		WithDialogModel(cfg.DialogModel).
+		WithSandbox(cfg.Sandbox).
+		Build()
+	if err != nil {
+		fmt.Printf("❌ Failed to build query context: %v\n", err)
+		return "", false
+	}
+
 	sessions, err := convService.ListSessions(queryCtx, aiw.ListSessionsQuery{
-		AssistantName: dialogModel,
+		AssistantName: cfg.DialogModel,
 		Limit:         10,
 		SortField:     "update_date",
 		SortOrder:     "DESC",
 	})
 	if err != nil {
 		fmt.Printf("❌ Failed to list sessions: %v\n", err)
-		return generateRandomUserID(), false
+		return "", false
 	}
 
 	if len(sessions) == 0 {
-		fmt.Println("ℹ️  No past sessions found. Starting a new session instead.")
-		return generateRandomUserID(), false
+		fmt.Println("ℹ️  No past sessions found.")
+		return "", false
 	}
 
 	fmt.Println("\n📋 Past Sessions:")
@@ -301,7 +400,7 @@ func promptListAndSelectSession(
 		}
 	}
 
-	return generateRandomUserID(), false
+	return "", false
 }
 
 // -----------------------------------------------------------------------------
@@ -562,12 +661,12 @@ func printBanner(cfg Config) {
 	fmt.Printf("  Tenant      : %s\n", cfg.Tenant)
 	fmt.Printf("  Dialog Model: %s\n", cfg.DialogModel)
 	fmt.Printf("  Sandbox     : %t\n", cfg.Sandbox)
-	fmt.Println("================================================================================")
-
-	if cfg.BearerToken == "" {
-		fmt.Println("⚠️  Warning: PAT (Bearer Token) is missing. Live requests may return 401 Unauthorized.")
-		fmt.Println("   Pass -token <PAT> or set the PAT environment variable.")
+	if len(cfg.BearerToken) > 8 {
+		fmt.Printf("  Token       : %s...%s\n", cfg.BearerToken[:4], cfg.BearerToken[len(cfg.BearerToken)-4:])
+	} else if cfg.BearerToken != "" {
+		fmt.Printf("  Token       : [provided]\n")
 	}
+	fmt.Println("================================================================================")
 }
 
 func configureLogger(verbose bool) zerolog.Logger {
@@ -579,20 +678,4 @@ func configureLogger(verbose bool) zerolog.Logger {
 		TimeFormat: time.RFC3339,
 	}
 	return zerolog.New(output).With().Timestamp().Logger().Level(zerolog.DebugLevel)
-}
-
-func getEnvOrDefault(key, defaultVal string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
-	}
-	return defaultVal
-}
-
-func getEnvBoolOrDefault(key string, defaultVal bool) bool {
-	if val := os.Getenv(key); val != "" {
-		if boolVal, err := strconv.ParseBool(val); err == nil {
-			return boolVal
-		}
-	}
-	return defaultVal
 }

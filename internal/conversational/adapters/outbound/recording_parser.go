@@ -27,6 +27,9 @@ func ParseRecordingData(xmlData string) ([]model.Message, error) {
 	}
 
 	decoder := xml.NewDecoder(strings.NewReader(trimmed))
+	decoder.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
+		return input, nil
+	}
 	var messages []model.Message
 
 	var (
