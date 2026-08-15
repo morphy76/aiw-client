@@ -33,7 +33,7 @@ github.com/morphy76/aiw-client/
         │   │   └── outbound/             # Driven Ports (ConversationRepository, AIWGateway)
         │   └── service/                  # Use Case Orchestration & Zerolog Logging
         └── adapters/
-            └── outbound/                 # Driven Adapters (HTTPSSEGateway, InMemory Gateway/Repo)
+            └── outbound/                 # Driven Adapters (HTTPSSEGateway, InMemory ConversationRepo)
 ```
 
 ---
