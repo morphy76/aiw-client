@@ -33,11 +33,12 @@ func ParseRecordingData(xmlData string) ([]model.Message, error) {
 	var messages []model.Message
 
 	var (
-		inTurn        bool
-		currentTS     time.Time
-		currentItemID string
-		inItem        bool
-		bufText       strings.Builder
+		inTurn           bool
+		currentTS        time.Time
+		currentItemID    string
+		inItem           bool
+		bufText          strings.Builder
+		currentTurnIsUser bool
 
 		// Per-turn collected text
 		userText     string
@@ -60,6 +61,7 @@ func ParseRecordingData(xmlData string) ([]model.Message, error) {
 			switch name {
 			case "userTurn", "systemTurn", "agentTurn", "botTurn":
 				inTurn = true
+				currentTurnIsUser = (name == "userTurn")
 				currentTS = time.Now().UTC()
 				for _, attr := range elem.Attr {
 					if attr.Name.Local == "dateTime" || attr.Name.Local == "time" {
@@ -101,6 +103,13 @@ func ParseRecordingData(xmlData string) ([]model.Message, error) {
 							botPrimary = text
 						case "dialog.chat.answer":
 							botSecondary = text
+						default:
+							// Fallback: if id is unrecognized, assign based on turn type
+							if currentTurnIsUser {
+								userText = text
+							} else {
+								botPrimary = text
+							}
 						}
 					}
 					inItem = false
@@ -117,6 +126,7 @@ func ParseRecordingData(xmlData string) ([]model.Message, error) {
 					inTurn = false
 					inItem = false
 					bufText.Reset()
+					currentTurnIsUser = false
 				}
 
 			case "systemTurn", "agentTurn", "botTurn":
@@ -132,6 +142,7 @@ func ParseRecordingData(xmlData string) ([]model.Message, error) {
 					inTurn = false
 					inItem = false
 					bufText.Reset()
+					currentTurnIsUser = false
 				}
 			}
 		}
