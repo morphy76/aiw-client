@@ -261,7 +261,7 @@ func TestHTTPGateway_SendCustomerMessageWithAttachments(t *testing.T) {
 	err := gw.SendCustomerMessage(context.Background(), cmd, "dlg-999")
 	require.NoError(t, err)
 
-	expectedJSON := `{"external_id":"ext-user-1","command":"addMessage","role":"CUSTOMER","text":"Here is my attachment","attachments":[{"filename":"test.pdf","contentref":"content-ref-99","metadata[...]}
+	expectedJSON := `{"external_id":"ext-user-1","command":"addMessage","role":"CUSTOMER","text":"Here is my attachment","attachments":[{"filename":"test.pdf","contentref":"content-ref-99","metadata":{"toolName":"docViewer"}}]}`
 	assert.JSONEq(t, expectedJSON, string(receivedBody))
 }
 
