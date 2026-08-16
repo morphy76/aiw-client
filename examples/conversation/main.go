@@ -491,7 +491,8 @@ func openStream(
 type chatAction int
 
 const (
-	actionStayInChat chatAction = iota
+	actionSendMessage chatAction = iota
+	actionHandledStayInChat
 	actionReturnToMenu
 	actionExitApp
 )
@@ -548,26 +549,27 @@ func runInteractiveChatLoop(
 				continue
 			}
 
-			// Handle slash commands
+			// Handle in-chat slash commands
 			action := handleSlashCommand(convService, convCtx, printer, text, dialogModel)
 			switch action {
 			case actionExitApp:
 				return true
 			case actionReturnToMenu:
 				return false
-			case actionStayInChat:
-				// Continue in chat loop
-			}
-
-			// Dispatch customer message
-			if err := convService.AddCustomerMessage(convCtx, text); err != nil {
-				printer.Error(fmt.Errorf("failed to send message: %w", err))
+			case actionHandledStayInChat:
+				continue
+			case actionSendMessage:
+				// Dispatch customer message
+				if err := convService.AddCustomerMessage(convCtx, text); err != nil {
+					printer.Error(fmt.Errorf("failed to send message: %w", err))
+				}
 			}
 		}
 	}
 }
 
-// handleSlashCommand processes commands like /close, /exit, /history, /sessions, /help.
+// handleSlashCommand processes in-chat slash commands (e.g. /close, /exit, /history, /sessions, /help, /clear).
+// If the input is not a slash command, it returns actionSendMessage.
 func handleSlashCommand(
 	convService aiw.ConversationalService,
 	convCtx aiw.ConversationalContext,
@@ -575,15 +577,19 @@ func handleSlashCommand(
 	text string,
 	dialogModel string,
 ) chatAction {
-	lower := strings.ToLower(text)
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, "/") {
+		return actionSendMessage
+	}
 
+	lower := strings.ToLower(trimmed)
 	switch lower {
-	case "/close", "close":
+	case "/close":
 		printer.Info("👋 Closing conversation and returning to menu...")
 		_ = convService.CloseConversation(convCtx)
 		return actionReturnToMenu
 
-	case "/exit", "exit", "/quit", "quit":
+	case "/exit", "/quit":
 		printer.Info("👋 Closing conversation session...")
 		_ = convService.CloseConversation(convCtx)
 		printer.Info("🔌 Session closed. Goodbye!")
@@ -597,7 +603,7 @@ func handleSlashCommand(
 			renderConversationHistory(history)
 		}
 		printer.Prompt()
-		return actionStayInChat
+		return actionHandledStayInChat
 
 	case "/sessions":
 		sessions, err := convService.ListSessions(convCtx, aiw.ListSessionsQuery{
@@ -615,7 +621,7 @@ func handleSlashCommand(
 			printer.Info("")
 		}
 		printer.Prompt()
-		return actionStayInChat
+		return actionHandledStayInChat
 
 	case "/help":
 		printer.Info("\nℹ️  Session Info & Available Commands:")
@@ -625,15 +631,17 @@ func handleSlashCommand(
 		printer.Info(fmt.Sprintf("  Dialog Model: %s", convCtx.DialogModel()))
 		printer.Info("  Commands    : '/close' (close & return to menu), '/history' (view history), '/sessions' (list past chats), '/clear' (clear screen), '/exit' (quit application)\n")
 		printer.Prompt()
-		return actionStayInChat
+		return actionHandledStayInChat
 
 	case "/clear":
 		fmt.Print("\033[H\033[2J")
 		printer.Prompt()
-		return actionStayInChat
+		return actionHandledStayInChat
 
 	default:
-		return actionStayInChat
+		printer.Info(fmt.Sprintf("⚠️ Unknown command '%s'. Type '/help' for available commands.", trimmed))
+		printer.Prompt()
+		return actionHandledStayInChat
 	}
 }
 

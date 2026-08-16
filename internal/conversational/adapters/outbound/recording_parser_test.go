@@ -130,3 +130,41 @@ func TestParseRecordingData_VariousEncodings(t *testing.T) {
 	}
 }
 
+func TestParseRecordingData_VariablesFormat(t *testing.T) {
+	xmlData := `<interaction>
+<userTurn dateTime="16/08/2026 15:26:17.123">
+  <variable id="u_u"><value>Como cancelo meu cartão de crédito?</value></variable>
+</userTurn>
+<systemTurn dateTime="16/08/2026 15:26:32.456">
+  <variable id="dialog.chat.answer"><value>Para cancelar seu cartão de crédito, siga os passos...</value></variable>
+  <variable id="u_m"><value>{"answer":"Para cancelar seu cartão de crédito, siga os passos...","sources":[{"id":"doc-bradesco","title":"Bradesco Cartoes.pdf"}]}</value></variable>
+</systemTurn>
+<userTurn dateTime="16/08/2026 15:27:00.000">
+  <variable id="u_u"><value>Obrigado!</value></variable>
+</userTurn>
+<systemTurn dateTime="16/08/2026 15:27:05.000">
+  <variable id="u_m"><value>De nada! Posso ajudar em algo mais?</value></variable>
+</systemTurn>
+</interaction>`
+
+	messages, err := outbound.ParseRecordingData(xmlData)
+	require.NoError(t, err)
+	require.Len(t, messages, 4)
+
+	assert.Equal(t, model.SenderCustomer, messages[0].Sender())
+	assert.Equal(t, "Como cancelo meu cartão de crédito?", messages[0].Content())
+
+	assert.Equal(t, model.SenderAgent, messages[1].Sender())
+	require.NotNil(t, messages[1].Answer())
+	assert.Equal(t, "Para cancelar seu cartão de crédito, siga os passos...", messages[1].Answer().Text())
+	require.Len(t, messages[1].Answer().Sources(), 1)
+	assert.Equal(t, "doc-bradesco", messages[1].Answer().Sources()[0].ID())
+
+	assert.Equal(t, model.SenderCustomer, messages[2].Sender())
+	assert.Equal(t, "Obrigado!", messages[2].Content())
+
+	assert.Equal(t, model.SenderAgent, messages[3].Sender())
+	assert.Equal(t, "De nada! Posso ajudar em algo mais?", messages[3].Content())
+}
+
+

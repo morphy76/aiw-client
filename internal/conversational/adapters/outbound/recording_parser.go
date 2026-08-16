@@ -33,11 +33,16 @@ func ParseRecordingData(xmlData string) ([]model.Message, error) {
 	var messages []model.Message
 
 	var (
-		inTurn      bool
-		currentRole model.Sender
-		currentTS   time.Time
-		inItemID    string
-		bufText     strings.Builder
+		inTurn        bool
+		currentTS     time.Time
+		currentItemID string
+		inItem        bool
+		bufText       strings.Builder
+
+		// Per-turn collected text
+		userText     string
+		botPrimary   string // from u_m
+		botSecondary string // from dialog.chat.answer
 	)
 
 	for {
@@ -53,51 +58,81 @@ func ParseRecordingData(xmlData string) ([]model.Message, error) {
 		case xml.StartElement:
 			name := elem.Name.Local
 			switch name {
-			case "userTurn", "systemTurn":
+			case "userTurn", "systemTurn", "agentTurn", "botTurn":
 				inTurn = true
-				if name == "userTurn" {
-					currentRole = model.SenderCustomer
-				} else {
-					currentRole = model.SenderAgent
-				}
 				currentTS = time.Now().UTC()
 				for _, attr := range elem.Attr {
-					if attr.Name.Local == "dateTime" {
+					if attr.Name.Local == "dateTime" || attr.Name.Local == "time" {
 						if parsed, ok := parseDateTime(attr.Value); ok {
 							currentTS = parsed
 						}
 					}
 				}
-			case "item":
+				userText = ""
+				botPrimary = ""
+				botSecondary = ""
+
+			case "item", "variable":
 				for _, attr := range elem.Attr {
 					if attr.Name.Local == "id" {
-						inItemID = attr.Value
+						currentItemID = attr.Value
+						inItem = true
+						bufText.Reset()
 					}
 				}
 			}
 
 		case xml.CharData:
-			if inTurn && (inItemID == "u_u" || inItemID == "u_m") {
+			if inTurn && inItem {
 				bufText.Write(elem)
 			}
 
 		case xml.EndElement:
 			name := elem.Name.Local
 			switch name {
-			case "item":
-				if inItemID == "u_u" || inItemID == "u_m" {
+			case "item", "variable":
+				if inItem {
 					text := strings.TrimSpace(bufText.String())
 					if text != "" {
-						msg := buildDomainMessage(currentRole, text, currentTS)
+						switch currentItemID {
+						case "u_u":
+							userText = text
+						case "u_m":
+							botPrimary = text
+						case "dialog.chat.answer":
+							botSecondary = text
+						}
+					}
+					inItem = false
+					currentItemID = ""
+					bufText.Reset()
+				}
+
+			case "userTurn":
+				if inTurn {
+					if userText != "" {
+						msg := buildDomainMessage(model.SenderCustomer, userText, currentTS)
 						messages = append(messages, msg)
 					}
+					inTurn = false
+					inItem = false
 					bufText.Reset()
-					inItemID = ""
 				}
-			case "userTurn", "systemTurn":
-				inTurn = false
-				inItemID = ""
-				bufText.Reset()
+
+			case "systemTurn", "agentTurn", "botTurn":
+				if inTurn {
+					chosen := botPrimary
+					if chosen == "" {
+						chosen = botSecondary
+					}
+					if chosen != "" {
+						msg := buildDomainMessage(model.SenderAgent, chosen, currentTS)
+						messages = append(messages, msg)
+					}
+					inTurn = false
+					inItem = false
+					bufText.Reset()
+				}
 			}
 		}
 	}
