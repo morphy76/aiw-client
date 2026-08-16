@@ -40,7 +40,7 @@ func BenchmarkClient_AddCustomerMessage(b *testing.B) {
 	ctx := context.Background()
 	convCtx := aiw.NewConversationalContext(ctx, "bench-user-1")
 
-	err = convSvc.OpenConversation(convCtx, nil, nil, nil, nil, nil)
+	err = convSvc.OpenConversation(convCtx, nil, nil, nil, nil, nil, nil, nil)
 	if err != nil {
 		b.Fatalf("failed to open conversation: %v", err)
 	}

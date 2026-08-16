@@ -57,12 +57,14 @@ github.com/morphy76/aiw-client/
 - **Conversation Restoration & History**: Restore past conversational turns and citation sources from AIW recording data (`/dialog/api/dialogSession/v1.0/_withRecordingData`).
 - **Session & Activity Listing**: List and paginate past user sessions and activities (`/dialog/api/dialogSession/v1.0/_fromFilter`).
 - **Attachments & Structured Answers**: Support message attachments and automatic parsing of structured bot answers with supporting document citations (`Source`).
-- **Reactive Lifecycle & Message Callbacks**:
-  - `OnOpenFn`: Called when `lifecycle.event == "created"` with session `dialog_id`.
+- **Reactive Lifecycle & Message Callbacks**: Detailed in **[Conversational Flow Documentation](file:///Users/R.Pasquini/Projects/side/aiw-client/docs/conversational_flow.md)**:
+  - `OnOpenFn`: Called when the SSE transport stream is connected (HTTP 200).
+  - `OnCreatedFn`: Called when `lifecycle.event == "created"` with assigned session `dialog_id`.
+  - `OnErrorFn`: Called on network/parsing/functional failures, providing a `CancelStreamFunc` for stream teardown and optional remote dialog termination.
   - `OnCustomerMessageFn`: Called when `message.event == "messageAdded"` with role `CUSTOMER`.
   - `OnBotMessageFn`: Called when `message.event == "messageAdded"` with role `BOT` / `AGENT`.
-  - `OnErrorFn`: Called upon network/stream failures, abort events (`lifecycle.event == "aborted"`), or callback errors.
-  - `OnCloseFn`: Called when session closes (`lifecycle.event == "closed"`).
+  - `OnDialogTerminatedFn`: Called when the dialog terminates on the backend (`lifecycle.event == "aborted"` or `"closed"`), with `isAborted` flag.
+  - `OnCloseFn`: Called when the SSE transport stream terminates (idempotent via `sync.Once`).
 - **Fluent Context Builder**: `ConversationalContextBuilder` to configure customer external ID, target dialog model, bearer token (PAT), sandbox mode, and custom headers (tenant is automatically derived from the Bearer token).
 - **Conversational Context**: Wraps standard Go `context.Context` (for timeout/cancellation propagation) with customer metadata (`ExternalID`), automatically resolved tenant (`Tenant()`), and thread-safe session tracking (`DialogID`).
 - **JWT & Token Utilities**: Decode JWT payloads safely to automatically extract tenant namespaces (`ExtractTenantFromToken`), caller usernames (`ExtractUsernameFromToken`), and email addresses (`ExtractEmailFromToken`) following hierarchical fallback rules.
@@ -130,14 +132,20 @@ func main() {
 	// 4. Open a conversation with reactive lifecycle & message callbacks
 	err = convService.OpenConversation(
 		convCtx,
-		// onOpenFn: Session established; send initial message
+		// onOpenFn: SSE transport connected (HTTP 200)
 		func(c aiw.ConversationalContext) error {
-			fmt.Printf("Connected! Dialog ID: %s, Model: %s, Tenant: %s\n", c.DialogID(), c.DialogModel(), c.Tenant())
+			fmt.Println("🔗 SSE transport stream connected.")
+			return nil
+		},
+		// onCreatedFn: Dialog created on server with assigned Dialog ID
+		func(c aiw.ConversationalContext, dialogID string) error {
+			fmt.Printf("Connected! Dialog ID: %s, Model: %s, Tenant: %s\n", dialogID, c.DialogModel(), c.Tenant())
 			return convService.AddCustomerMessage(c, "Hello! How do I reset my password?")
 		},
-		// onErrorFn: Handle stream or network errors
-		func(c aiw.ConversationalContext, err error) {
+		// onErrorFn: Handle stream or network errors with cancellation capability
+		func(c aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
 			fmt.Printf("Error encountered for %s: %v\n", c.ExternalID(), err)
+			cancel(true)
 		},
 		// onCustomerMessageFn: Message acknowledgment
 		func(c aiw.ConversationalContext, mex string) error {
@@ -149,9 +157,18 @@ func main() {
 			fmt.Printf("[%s] AI Bot Response: %s\n", c.DialogID(), answer)
 			return convService.CloseConversation(c)
 		},
-		// onCloseFn: Conversation terminated cleanly
+		// onDialogTerminatedFn: Dialog aborted or closed on server
+		func(c aiw.ConversationalContext, isAborted bool, reason string) error {
+			if isAborted {
+				fmt.Printf("Dialog aborted by server: %s\n", reason)
+			} else {
+				fmt.Printf("Dialog closed cleanly: %s\n", reason)
+			}
+			return nil
+		},
+		// onCloseFn: Conversation transport terminated cleanly
 		func(c aiw.ConversationalContext) error {
-			fmt.Println("Conversation closed cleanly.")
+			fmt.Println("Conversation stream closed.")
 			close(doneCh)
 			return nil
 		},

@@ -29,13 +29,25 @@ func newTestHTTPClient(fn roundTripFunc) *http.Client {
 }
 
 type testStreamHandler struct {
-	mu              sync.Mutex
-	createdDialogID string
-	customerMsgs    []string
-	botMsgs         []string
-	closedCalled    bool
-	abortedCalled   bool
-	errors          []error
+	mu                   sync.Mutex
+	openCalled           bool
+	createdDialogID      string
+	customerMsgs         []string
+	botMsgs              []string
+	closedCalled         bool
+	dialogTerminatedCall struct {
+		called    bool
+		isAborted bool
+		reason    string
+	}
+	errors []error
+}
+
+func (h *testStreamHandler) OnOpen() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.openCalled = true
+	return nil
 }
 
 func (h *testStreamHandler) OnCreated(dialogID string) error {
@@ -59,10 +71,12 @@ func (h *testStreamHandler) OnBotMessage(text string) error {
 	return nil
 }
 
-func (h *testStreamHandler) OnAborted(reason string) {
+func (h *testStreamHandler) OnDialogTerminated(isAborted bool, reason string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.abortedCalled = true
+	h.dialogTerminatedCall.called = true
+	h.dialogTerminatedCall.isAborted = isAborted
+	h.dialogTerminatedCall.reason = reason
 }
 
 func (h *testStreamHandler) OnClosed() {
@@ -71,7 +85,7 @@ func (h *testStreamHandler) OnClosed() {
 	h.closedCalled = true
 }
 
-func (h *testStreamHandler) OnError(err error) {
+func (h *testStreamHandler) OnError(err error, cancel func(requestDialogTermination bool)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.errors = append(h.errors, err)
@@ -178,7 +192,8 @@ func TestHTTPGateway_OpenSessionStream(t *testing.T) {
 		handler.mu.Lock()
 		defer handler.mu.Unlock()
 		assert.Equal(t, "dlg-abort-456", handler.createdDialogID)
-		assert.True(t, handler.abortedCalled)
+		assert.True(t, handler.dialogTerminatedCall.called)
+		assert.True(t, handler.dialogTerminatedCall.isAborted)
 	})
 }
 

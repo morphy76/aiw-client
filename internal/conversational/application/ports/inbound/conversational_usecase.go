@@ -8,12 +8,13 @@ import (
 
 // StreamEventHandler handles real-time SSE events dispatched during conversation streaming.
 type StreamEventHandler interface {
+	OnOpen() error
 	OnCreated(dialogID string) error
 	OnCustomerMessage(text string) error
 	OnBotMessage(text string) error
-	OnAborted(reason string)
+	OnDialogTerminated(isAborted bool, reason string)
 	OnClosed()
-	OnError(err error)
+	OnError(err error, cancel func(requestDialogTermination bool))
 }
 
 // OpenConversationCommand encapsulates inputs for opening a conversation session.

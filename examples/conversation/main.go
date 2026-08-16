@@ -463,7 +463,14 @@ func openStream(
 	}
 
 	onOpen := func(c aiw.ConversationalContext) error {
-		printer.Info(fmt.Sprintf("🔗 Session Connected! Dialog ID: %s", c.DialogID()))
+		if verbose {
+			logger.Debug().Msg("SSE connection established")
+		}
+		return nil
+	}
+
+	onCreated := func(c aiw.ConversationalContext, dialogID string) error {
+		printer.Info(fmt.Sprintf("🔗 Session Connected! Dialog ID: %s", dialogID))
 		printer.Info("💡 Type a message and press Enter to chat.")
 		printer.Info("💡 Commands: '/close', '/history', '/sessions', '/help', '/clear', '/exit'")
 		printer.Info("--------------------------------------------------------------------------------")
@@ -483,18 +490,36 @@ func openStream(
 		return nil
 	}
 
-	onError := func(_ aiw.ConversationalContext, err error) {
+	onError := func(_ aiw.ConversationalContext, err error, _ aiw.CancelStreamFunc) {
 		printer.Error(err)
 	}
 
+	onDialogTerminated := func(_ aiw.ConversationalContext, isAborted bool, reason string) error {
+		if isAborted {
+			printer.Info(fmt.Sprintf("⚠️ Conversation aborted by server: %s", reason))
+		} else {
+			printer.Info("ℹ️ Conversation dialog closed by server.")
+		}
+		return nil
+	}
+
 	onClose := func(_ aiw.ConversationalContext) error {
-		printer.Info("🔌 Conversation stream closed by server.")
+		printer.Info("🔌 Conversation stream closed.")
 		finish()
 		return nil
 	}
 
 	printer.Info("🔌 Connecting to live conversation stream...")
-	err = convService.OpenConversation(convCtx, onOpen, onError, onCustomerMessage, onBotMessage, onClose)
+	err = convService.OpenConversation(
+		convCtx,
+		onOpen,
+		onCreated,
+		onError,
+		onCustomerMessage,
+		onBotMessage,
+		onDialogTerminated,
+		onClose,
+	)
 	return ready, closed, err
 }
 

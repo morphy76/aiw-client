@@ -38,5 +38,6 @@ func TestLiveStreamClient_OpenSessionStream(t *testing.T) {
 	}, handler)
 
 	require.NoError(t, err)
+	assert.True(t, handler.openCalled)
 	assert.Equal(t, "dlg-777", handler.createdDialogID)
 }
