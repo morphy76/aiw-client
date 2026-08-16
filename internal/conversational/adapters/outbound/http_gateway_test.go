@@ -91,7 +91,7 @@ func TestHTTPGateway_OpenSessionStream(t *testing.T) {
 			receivedQuery = req.URL.RawQuery
 
 			go func() {
-				defer pw.Close()
+				defer func() { _ = pw.Close() }()
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-sse-123\"}}\n\n")
 				time.Sleep(10 * time.Millisecond)
 				_, _ = fmt.Fprint(pw, "data: {\"message\":{\"event\":\"messageAdded\",\"role\":\"CUSTOMER\",\"text\":\"Hi!\"}}\n\n")
@@ -99,7 +99,7 @@ func TestHTTPGateway_OpenSessionStream(t *testing.T) {
 				_, _ = fmt.Fprint(pw, "data: {\"message\":{\"event\":\"messageAdded\",\"role\":\"BOT\",\"text\":\"Hello human!\"}}\n\n")
 				time.Sleep(10 * time.Millisecond)
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"closed\"}}\n\n")
-			}()
+			}() 
 
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -147,7 +147,7 @@ func TestHTTPGateway_OpenSessionStream(t *testing.T) {
 
 		client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 			go func() {
-				defer pw.Close()
+				defer func() { _ = pw.Close() }()
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-abort-456\"}}\n\n")
 				time.Sleep(10 * time.Millisecond)
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"aborted\"}}\n\n")
@@ -261,7 +261,7 @@ func TestHTTPGateway_SendCustomerMessageWithAttachments(t *testing.T) {
 	err := gw.SendCustomerMessage(context.Background(), cmd, "dlg-999")
 	require.NoError(t, err)
 
-	expectedJSON := `{"external_id":"ext-user-1","command":"addMessage","role":"CUSTOMER","text":"Here is my attachment","attachments":[{"filename":"test.pdf","contentref":"content-ref-99","metadata":{"toolName":"docViewer"}}]}`
+	expectedJSON := `{"external_id":"ext-user-1","command":"addMessage","role":"CUSTOMER","text":"Here is my attachment","attachments":[{"filename":"test.pdf","contentref":"content-ref-99","metadata[...]}
 	assert.JSONEq(t, expectedJSON, string(receivedBody))
 }
 
@@ -327,7 +327,7 @@ func TestHTTPGateway_ListSessions(t *testing.T) {
 				"language": "en",
 				"model": "RocchettoEmbeddingsV2",
 				"recording": true,
-				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Account support inquiry</value></subItem></item></userTurn></session></recording>",
+				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Account support inquiry</value></subItem></item></userTurn></session></re[...]",
 				"sandbox": false,
 				"sessionId": "theSessionId-1",
 				"startTime": "2026-08-15 09:00:00",
@@ -340,7 +340,7 @@ func TestHTTPGateway_ListSessions(t *testing.T) {
 				"id": 102,
 				"externalId": "session-2",
 				"insertDate": "2026-08-14 15:30:00",
-				"recordingData": "<recording><session><userTurn dateTime=\"14/08/2026 15:30:00.000\"><item id=\"u_u\"><subItem><value>Order tracking issue</value></subItem></item></userTurn></session></recording>"
+				"recordingData": "<recording><session><userTurn dateTime=\"14/08/2026 15:30:00.000\"><item id=\"u_u\"><subItem><value>Order tracking issue</value></subItem></item></userTurn></session></recor[...]",
 			}
 		]`
 		return &http.Response{
@@ -400,7 +400,7 @@ func TestHTTPGateway_GetSessionRecording(t *testing.T) {
 		jsonResp := `[
 			{
 				"id": 101,
-				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Hello previous session</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:01.000\"><item id=\"u_m\"><subItem><value>{\"answer\":\"Restored response\",\"sources\":[]}</value></subItem></item></systemTurn></session></recording>"
+				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Hello previous session</value></subItem></item></userTurn><systemTurn dat[...]",
 			}
 		]`
 		return &http.Response{

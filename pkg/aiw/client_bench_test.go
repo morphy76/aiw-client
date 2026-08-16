@@ -15,7 +15,7 @@ func BenchmarkClient_AddCustomerMessage(b *testing.B) {
 		if req.Header.Get("Accept") == "text/event-stream" {
 			pr, pw := io.Pipe()
 			go func() {
-				defer pw.Close()
+				defer func() { _ = pw.Close() }()
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dialog-bench-101\"}}\n\n")
 			}()
 			return &http.Response{
