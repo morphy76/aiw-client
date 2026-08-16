@@ -60,7 +60,7 @@ func TestClientBuilder_WithConversationalService(t *testing.T) {
 
 func TestClientBuilder_WithCustomDependenciesAndFlow(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 		if req.Header.Get("Accept") == "text/event-stream" {
@@ -137,4 +137,3 @@ func TestClientBuilder_WithOptionsDirectly(t *testing.T) {
 
 	require.NotNil(t, client.Conversational())
 }
-

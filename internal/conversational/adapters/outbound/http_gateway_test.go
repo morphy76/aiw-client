@@ -91,7 +91,7 @@ func TestHTTPGateway_OpenSessionStream(t *testing.T) {
 			receivedQuery = req.URL.RawQuery
 
 			go func() {
-				defer pw.Close()
+				defer func() { _ = pw.Close() }()
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-sse-123\"}}\n\n")
 				time.Sleep(10 * time.Millisecond)
 				_, _ = fmt.Fprint(pw, "data: {\"message\":{\"event\":\"messageAdded\",\"role\":\"CUSTOMER\",\"text\":\"Hi!\"}}\n\n")
@@ -99,7 +99,7 @@ func TestHTTPGateway_OpenSessionStream(t *testing.T) {
 				_, _ = fmt.Fprint(pw, "data: {\"message\":{\"event\":\"messageAdded\",\"role\":\"BOT\",\"text\":\"Hello human!\"}}\n\n")
 				time.Sleep(10 * time.Millisecond)
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"closed\"}}\n\n")
-			}()
+			}() 
 
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -147,7 +147,7 @@ func TestHTTPGateway_OpenSessionStream(t *testing.T) {
 
 		client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 			go func() {
-				defer pw.Close()
+				defer func() { _ = pw.Close() }()
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-abort-456\"}}\n\n")
 				time.Sleep(10 * time.Millisecond)
 				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"aborted\"}}\n\n")
@@ -315,33 +315,33 @@ func TestHTTPGateway_ListSessions(t *testing.T) {
 		}
 
 		jsonResp := `[
-			{
-				"deleteDate": "1970-01-01",
-				"insertDate": "1970-01-01",
-				"updateDate": "1970-01-01",
-				"applicationNamespace": "almawave.com",
-				"callerInRole": false,
-				"closeTime": "1970-01-01",
-				"externalId": "session-1",
-				"externalSystem": "string",
-				"language": "en",
-				"model": "RocchettoEmbeddingsV2",
-				"recording": true,
-				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Account support inquiry</value></subItem></item></userTurn></session></recording>",
-				"sandbox": false,
-				"sessionId": "theSessionId-1",
-				"startTime": "2026-08-15 09:00:00",
-				"status": "CLOSED",
-				"authGroup": "string",
-				"id": 0,
-				"version": 0
-			},
-			{
-				"id": 102,
-				"externalId": "session-2",
-				"insertDate": "2026-08-14 15:30:00",
-				"recordingData": "<recording><session><userTurn dateTime=\"14/08/2026 15:30:00.000\"><item id=\"u_u\"><subItem><value>Order tracking issue</value></subItem></item></userTurn></session></recording>"
-			}
+		  {
+		    "deleteDate": "1970-01-01",
+		    "insertDate": "1970-01-01",
+		    "updateDate": "1970-01-01",
+		    "applicationNamespace": "almawave.com",
+		    "callerInRole": false,
+		    "closeTime": "1970-01-01",
+		    "externalId": "session-1",
+		    "externalSystem": "string",
+		    "language": "en",
+		    "model": "RocchettoEmbeddingsV2",
+		    "recording": true,
+		    "recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Account support inquiry</value></subItem></item></userTurn></session></recording>",
+		    "sandbox": false,
+		    "sessionId": "theSessionId-1",
+		    "startTime": "2026-08-15 09:00:00",
+		    "status": "CLOSED",
+		    "authGroup": "string",
+		    "id": 0,
+		    "version": 0
+		  },
+		  {
+		    "id": 102,
+		    "externalId": "session-2",
+		    "insertDate": "2026-08-14 15:30:00",
+		    "recordingData": "<recording><session><userTurn dateTime=\"14/08/2026 15:30:00.000\"><item id=\"u_u\"><subItem><value>Order tracking issue</value></subItem></item></userTurn></session></recording>"
+		  }
 		]`
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -398,10 +398,10 @@ func TestHTTPGateway_GetSessionRecording(t *testing.T) {
 		}
 
 		jsonResp := `[
-			{
-				"id": 101,
-				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Hello previous session</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:01.000\"><item id=\"u_m\"><subItem><value>{\"answer\":\"Restored response\",\"sources\":[]}</value></subItem></item></systemTurn></session></recording>"
-			}
+		  {
+		    "id": 101,
+		    "recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Hello previous session</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"s_s\"><subItem><value>Restored response</value></subItem></item></systemTurn></session></recording>"
+		  }
 		]`
 		return &http.Response{
 			StatusCode: http.StatusOK,
