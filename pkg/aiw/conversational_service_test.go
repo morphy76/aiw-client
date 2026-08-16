@@ -1,6 +1,7 @@
 package aiw_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -688,28 +690,28 @@ func TestConversationalService_ListSessions(t *testing.T) {
 		assert.Contains(t, string(bodyBytes), `"withRecordingData":false`)
 
 		jsonResp := `[
-			{
-				"deleteDate": "1970-01-01",
-				"insertDate": "1970-01-01",
-				"updateDate": "1970-01-01",
-				"applicationNamespace": "default",
-				"callerInRole": false,
-				"closeTime": "1970-01-01",
-				"externalId": "user-456_sess_1",
-				"externalSystem": "string",
-				"language": "en",
-				"model": "RocchettoEmbeddingsV2",
-				"recording": true,
-				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Password reset inquiry</value></subItem></item></userTurn></session></recording>",
-				"sandbox": false,
-				"sessionId": "theSessionId",
-				"startTime": "2026-08-15 09:00:00",
-				"status": "CLOSED",
-				"authGroup": "string",
-				"id": 0,
-				"version": 0
-			}
-		]`
+				{
+					"deleteDate": "1970-01-01",
+					"insertDate": "1970-01-01",
+					"updateDate": "1970-01-01",
+					"applicationNamespace": "default",
+					"callerInRole": false,
+					"closeTime": "1970-01-01",
+					"externalId": "user-456_sess_1",
+					"externalSystem": "string",
+					"language": "en",
+					"model": "RocchettoEmbeddingsV2",
+					"recording": true,
+					"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Password reset inquiry</value></subItem></item></userTurn></session></rec[...]\n					", 
+					"sandbox": false,
+					"sessionId": "theSessionId",
+					"startTime": "2026-08-15 09:00:00",
+					"status": "CLOSED",
+					"authGroup": "string",
+					"id": 0,
+					"version": 0
+				}
+			]`
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -744,11 +746,10 @@ func TestConversationalService_RestoreConversation(t *testing.T) {
 		assert.Equal(t, "[88]", string(bodyBytes))
 
 		jsonResp := `[
-			{
-				"id": 88,
-				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Can I return an item?</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:02.000\"><item id=\"u_m\"><subItem><value>{\"answer\":\"Yes, within 30 days.\",\"sources\":[{\"id\":\"p1\",\"title\":\"Return Policy\"}]}</value></subItem></item></systemTurn></session></recording>"
-			}
-		]`
+				{
+					"id": 88,
+					"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Can I return an item?</value></subItem></item></userTurn><systemTurn date[...]\n				}
+			]`
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
