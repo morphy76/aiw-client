@@ -1,7 +1,6 @@
 package aiw_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +18,7 @@ import (
 
 func TestConversationalService_OnOpenErrorBubbling(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -126,7 +124,7 @@ func TestConversationalService_OnCreatedCallback(t *testing.T) {
 
 func TestConversationalService_CallbackPanicRecovery(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 		go func() {

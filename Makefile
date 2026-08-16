@@ -44,3 +44,8 @@ generate:
 .PHONY: help
 help:
 	@grep -E '^## ' Makefile | sed 's/## //'
+
+## test-examples: Run tests for example packages
+.PHONY: test-examples
+test-examples:
+	go test -count=1 ./examples/...
