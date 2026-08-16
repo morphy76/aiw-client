@@ -71,7 +71,7 @@ func TestConversationalService_OnOpenErrorBubbling(t *testing.T) {
 
 func TestConversationalService_OnCreatedCallback(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 		go func() {
@@ -182,7 +182,7 @@ func TestConversationalService_CallbackPanicRecovery(t *testing.T) {
 
 func TestConversationalService_OnBotMessageAndCustomerMessageFlow(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 		if req.Header.Get("Accept") == "text/event-stream" {
@@ -246,7 +246,7 @@ func TestConversationalService_OnBotMessageAndCustomerMessageFlow(t *testing.T) 
 
 func TestConversationalService_OnBotMessagePanicRecovery(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 		go func() {
@@ -304,7 +304,7 @@ func TestConversationalService_OnBotMessagePanicRecovery(t *testing.T) {
 func TestConversationalService_OnDialogTerminated(t *testing.T) {
 	t.Run("aborted lifecycle event", func(t *testing.T) {
 		pr, pw := io.Pipe()
-		defer pw.Close()
+		defer func() { _ = pw.Close() }()
 
 		client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 			go func() {
@@ -362,7 +362,7 @@ func TestConversationalService_OnDialogTerminated(t *testing.T) {
 
 	t.Run("closed lifecycle event", func(t *testing.T) {
 		pr, pw := io.Pipe()
-		defer pw.Close()
+		defer func() { _ = pw.Close() }()
 
 		client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 			go func() {
@@ -418,7 +418,7 @@ func TestConversationalService_OnDialogTerminated(t *testing.T) {
 
 func TestConversationalService_OnErrorWithCancelControl(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	var deleteCalled int32
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
@@ -529,7 +529,7 @@ func TestConversationalService_EmptyExternalID(t *testing.T) {
 
 func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	var postsReceived []string
 	var deleteReceived bool
@@ -782,7 +782,7 @@ func TestConversationalService_RestoreConversation(t *testing.T) {
 
 func TestConversationalService_AddCustomerMessageWithOptions(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	var sentJSON string
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
