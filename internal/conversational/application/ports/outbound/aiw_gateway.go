@@ -9,6 +9,9 @@ import (
 
 // StreamEventHandler handles events dispatched from the real-time conversational SSE stream.
 type StreamEventHandler interface {
+	// OnOpen is called when the SSE transport stream is connected (HTTP 200).
+	OnOpen() error
+
 	// OnCreated is called when lifecycle.event == "created" is received with the assigned dialog ID.
 	OnCreated(dialogID string) error
 
@@ -18,14 +21,14 @@ type StreamEventHandler interface {
 	// OnBotMessage is called when message.event == "messageAdded" with role "BOT" or "AGENT" is received.
 	OnBotMessage(text string) error
 
-	// OnAborted is called when lifecycle.event == "aborted" is received.
-	OnAborted(reason string)
+	// OnDialogTerminated is called when lifecycle.event == "aborted" or "closed" is received.
+	OnDialogTerminated(isAborted bool, reason string)
 
-	// OnClosed is called when lifecycle.event == "closed" or stream termination occurs.
+	// OnClosed is called when stream transport termination occurs.
 	OnClosed()
 
-	// OnError is called on stream or parsing errors.
-	OnError(err error)
+	// OnError is called on stream, transport, or parsing errors, supplying a cancellation handle.
+	OnError(err error, cancel func(requestDialogTermination bool))
 }
 
 // AIWGateway defines the external network/streaming contract to the AIW platform.

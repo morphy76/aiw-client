@@ -99,20 +99,25 @@ func TestClientBuilder_WithCustomDependenciesAndFlow(t *testing.T) {
 		Build()
 	require.NoError(t, err)
 
-	var onOpenCalled int32
+	var onCreatedCalled int32
 	err = client.Conversational().OpenConversation(
 		convCtx,
 		func(c aiw.ConversationalContext) error {
-			atomic.AddInt32(&onOpenCalled, 1)
+			return nil
+		},
+		func(c aiw.ConversationalContext, dialogID string) error {
+			atomic.AddInt32(&onCreatedCalled, 1)
+			assert.Equal(t, "diag-builder-test-202", dialogID)
 			return nil
 		},
 		nil,
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	require.NoError(t, err)
-	assert.Equal(t, int32(1), atomic.LoadInt32(&onOpenCalled))
+	assert.Equal(t, int32(1), atomic.LoadInt32(&onCreatedCalled))
 	assert.Equal(t, "diag-builder-test-202", convCtx.DialogID())
 
 	err = client.Conversational().AddCustomerMessage(convCtx, "Testing message via built facade")

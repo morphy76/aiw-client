@@ -14,12 +14,14 @@ import (
 )
 
 type callbackHolder struct {
-	onOpen            OnOpenFn
-	onError           OnErrorFn
-	onCustomerMessage OnCustomerMessageFn
-	onBotMessage      OnBotMessageFn
-	onClose           OnCloseFn
-	closeOnce         sync.Once
+	onOpen             OnOpenFn
+	onCreated          OnCreatedFn
+	onError            OnErrorFn
+	onCustomerMessage  OnCustomerMessageFn
+	onBotMessage       OnBotMessageFn
+	onDialogTerminated OnDialogTerminatedFn
+	onClose            OnCloseFn
+	closeOnce          sync.Once
 }
 
 // newDefaultConversationalService creates a ready-to-use ConversationalService backed by the default HTTP gateway and in-memory repository.
@@ -51,10 +53,19 @@ type sseStreamAdapterHandler struct {
 	holder  *callbackHolder
 }
 
-func (h *sseStreamAdapterHandler) OnCreated(dialogID string) error {
-	h.ctx.SetDialogID(dialogID)
+func (h *sseStreamAdapterHandler) OnOpen() error {
 	if h.holder != nil && h.holder.onOpen != nil {
 		if err := h.adapter.safeInvokeOpen(h.ctx, h.holder.onOpen); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *sseStreamAdapterHandler) OnCreated(dialogID string) error {
+	h.ctx.SetDialogID(dialogID)
+	if h.holder != nil && h.holder.onCreated != nil {
+		if err := h.adapter.safeInvokeCreated(h.ctx, h.holder.onCreated, dialogID); err != nil {
 			return err
 		}
 	}
@@ -75,12 +86,9 @@ func (h *sseStreamAdapterHandler) OnBotMessage(text string) error {
 	return nil
 }
 
-func (h *sseStreamAdapterHandler) OnAborted(_ string) {
-	if h.holder != nil {
-		if h.holder.onError != nil {
-			h.adapter.safeInvokeError(h.ctx, h.holder.onError, model.ErrConversationAborted)
-		}
-		_ = h.adapter.safeInvokeClose(h.ctx, h.holder)
+func (h *sseStreamAdapterHandler) OnDialogTerminated(isAborted bool, reason string) {
+	if h.holder != nil && h.holder.onDialogTerminated != nil {
+		_ = h.adapter.safeInvokeDialogTerminated(h.ctx, h.holder.onDialogTerminated, isAborted, reason)
 	}
 }
 
@@ -90,9 +98,9 @@ func (h *sseStreamAdapterHandler) OnClosed() {
 	}
 }
 
-func (h *sseStreamAdapterHandler) OnError(err error) {
+func (h *sseStreamAdapterHandler) OnError(err error, cancel func(requestDialogTermination bool)) {
 	if h.holder != nil && h.holder.onError != nil {
-		h.adapter.safeInvokeError(h.ctx, h.holder.onError, err)
+		h.adapter.safeInvokeError(h.ctx, h.holder.onError, err, cancel)
 	}
 }
 
@@ -100,9 +108,11 @@ func (h *sseStreamAdapterHandler) OnError(err error) {
 func (a *conversationalServiceAdapter) OpenConversation(
 	ctx ConversationalContext,
 	onOpenFn OnOpenFn,
+	onCreatedFn OnCreatedFn,
 	onErrorFn OnErrorFn,
 	onCustomerMessageFn OnCustomerMessageFn,
 	onBotMessageFn OnBotMessageFn,
+	onDialogTerminatedFn OnDialogTerminatedFn,
 	onCloseFn OnCloseFn,
 ) error {
 	start := time.Now()
@@ -118,17 +128,19 @@ func (a *conversationalServiceAdapter) OpenConversation(
 		err := model.ErrInvalidExternalID
 		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("invalid external ID")
 		if onErrorFn != nil {
-			a.safeInvokeError(ctx, onErrorFn, err)
+			a.safeInvokeError(ctx, onErrorFn, err, func(bool) {})
 		}
 		return err
 	}
 
 	holder := &callbackHolder{
-		onOpen:            onOpenFn,
-		onError:           onErrorFn,
-		onCustomerMessage: onCustomerMessageFn,
-		onBotMessage:      onBotMessageFn,
-		onClose:           onCloseFn,
+		onOpen:             onOpenFn,
+		onCreated:          onCreatedFn,
+		onError:            onErrorFn,
+		onCustomerMessage:  onCustomerMessageFn,
+		onBotMessage:       onBotMessageFn,
+		onDialogTerminated: onDialogTerminatedFn,
+		onClose:            onCloseFn,
 	}
 	a.mu.Lock()
 	a.callbacks[ctx.ExternalID()] = holder
@@ -151,7 +163,7 @@ func (a *conversationalServiceAdapter) OpenConversation(
 	if err != nil {
 		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("failed to open conversation")
 		if onErrorFn != nil {
-			a.safeInvokeError(ctx, onErrorFn, err)
+			a.safeInvokeError(ctx, onErrorFn, err, func(bool) {})
 		}
 		return err
 	}
@@ -192,7 +204,7 @@ func (a *conversationalServiceAdapter) AddCustomerMessageWithOptions(
 		err := model.ErrInvalidExternalID
 		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("missing external ID")
 		if holder != nil && holder.onError != nil {
-			a.safeInvokeError(ctx, holder.onError, err)
+			a.safeInvokeError(ctx, holder.onError, err, func(bool) {})
 		}
 		return err
 	}
@@ -217,7 +229,7 @@ func (a *conversationalServiceAdapter) AddCustomerMessageWithOptions(
 	if err != nil {
 		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("failed to add customer message")
 		if holder != nil && holder.onError != nil {
-			a.safeInvokeError(ctx, holder.onError, err)
+			a.safeInvokeError(ctx, holder.onError, err, func(bool) {})
 		}
 		return err
 	}
@@ -253,7 +265,7 @@ func (a *conversationalServiceAdapter) CloseConversation(ctx ConversationalConte
 	}); err != nil {
 		log.Error().Err(err).Dur("duration_ms", time.Since(start)).Msg("failed to close conversation")
 		if holder != nil && holder.onError != nil {
-			a.safeInvokeError(ctx, holder.onError, err)
+			a.safeInvokeError(ctx, holder.onError, err, func(bool) {})
 		}
 		return err
 	}
@@ -396,11 +408,26 @@ func (a *conversationalServiceAdapter) safeInvokeOpen(ctx ConversationalContext,
 	return fn(ctx)
 }
 
-func (a *conversationalServiceAdapter) safeInvokeError(ctx ConversationalContext, fn OnErrorFn, err error) {
+func (a *conversationalServiceAdapter) safeInvokeCreated(ctx ConversationalContext, fn OnCreatedFn, dialogID string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in OnCreatedFn callback: %v", r)
+		}
+	}()
+	return fn(ctx, dialogID)
+}
+
+func (a *conversationalServiceAdapter) safeInvokeError(ctx ConversationalContext, fn OnErrorFn, err error, cancel CancelStreamFunc) {
+	if fn == nil {
+		return
+	}
+	if cancel == nil {
+		cancel = func(bool) {}
+	}
 	defer func() {
 		_ = recover()
 	}()
-	fn(ctx, err)
+	fn(ctx, err, cancel)
 }
 
 func (a *conversationalServiceAdapter) safeInvokeCustomerMessage(ctx ConversationalContext, fn OnCustomerMessageFn, mex string) (err error) {
@@ -419,6 +446,15 @@ func (a *conversationalServiceAdapter) safeInvokeBotMessage(ctx ConversationalCo
 		}
 	}()
 	return fn(ctx, mex)
+}
+
+func (a *conversationalServiceAdapter) safeInvokeDialogTerminated(ctx ConversationalContext, fn OnDialogTerminatedFn, isAborted bool, reason string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in OnDialogTerminatedFn callback: %v", r)
+		}
+	}()
+	return fn(ctx, isAborted, reason)
 }
 
 func (a *conversationalServiceAdapter) safeInvokeClose(ctx ConversationalContext, holder *callbackHolder) (err error) {

@@ -37,6 +37,13 @@ type streamHandlerProxy struct {
 	ctx     context.Context
 }
 
+func (p *streamHandlerProxy) OnOpen() error {
+	if p.handler != nil {
+		return p.handler.OnOpen()
+	}
+	return nil
+}
+
 func (p *streamHandlerProxy) OnCreated(dialogID string) error {
 	if err := p.conv.Open(dialogID); err != nil && !errors.Is(err, model.ErrConversationAlreadyOpen) {
 		return err
@@ -72,11 +79,11 @@ func (p *streamHandlerProxy) OnBotMessage(text string) error {
 	return nil
 }
 
-func (p *streamHandlerProxy) OnAborted(reason string) {
+func (p *streamHandlerProxy) OnDialogTerminated(isAborted bool, reason string) {
 	_ = p.conv.Close()
 	_ = p.repo.Save(p.ctx, p.conv)
 	if p.handler != nil {
-		p.handler.OnAborted(reason)
+		p.handler.OnDialogTerminated(isAborted, reason)
 	}
 }
 
@@ -88,9 +95,9 @@ func (p *streamHandlerProxy) OnClosed() {
 	}
 }
 
-func (p *streamHandlerProxy) OnError(err error) {
+func (p *streamHandlerProxy) OnError(err error, cancel func(requestDialogTermination bool)) {
 	if p.handler != nil {
-		p.handler.OnError(err)
+		p.handler.OnError(err, cancel)
 	}
 }
 

@@ -2,11 +2,18 @@ package aiw
 
 import "time"
 
-// OnOpenFn is invoked when a conversation is successfully established and opened.
+// CancelStreamFunc terminates the active SSE connection and optionally issues
+// a remote conversation termination request to release server resources.
+type CancelStreamFunc func(requestDialogTermination bool)
+
+// OnOpenFn is invoked when the underlying SSE HTTP transport connection is established (HTTP 200 OK).
 type OnOpenFn func(ctx ConversationalContext) error
 
-// OnErrorFn is invoked when an error occurs during conversation lifecycle or message dispatching.
-type OnErrorFn func(ctx ConversationalContext, err error)
+// OnCreatedFn is invoked when the server assigns a dialog ID and emits the "created" lifecycle event.
+type OnCreatedFn func(ctx ConversationalContext, dialogID string) error
+
+// OnErrorFn is invoked on infrastructural (HTTP, SSE, parsing) or functional errors, providing stream cancellation control.
+type OnErrorFn func(ctx ConversationalContext, err error, cancel CancelStreamFunc)
 
 // OnCustomerMessageFn is invoked when a customer message is processed or confirmed via SSE.
 type OnCustomerMessageFn func(ctx ConversationalContext, mex string) error
@@ -14,7 +21,10 @@ type OnCustomerMessageFn func(ctx ConversationalContext, mex string) error
 // OnBotMessageFn is invoked when a bot / AI response is received via SSE.
 type OnBotMessageFn func(ctx ConversationalContext, mex string) error
 
-// OnCloseFn is invoked when a conversation is closed or terminated.
+// OnDialogTerminatedFn is invoked when the dialog lifecycle ends on the server side ("aborted" or "closed").
+type OnDialogTerminatedFn func(ctx ConversationalContext, isAborted bool, reason string) error
+
+// OnCloseFn is invoked when the SSE transport stream is terminated and local resources are cleaned up.
 type OnCloseFn func(ctx ConversationalContext) error
 
 // Source represents an information citation or document reference supporting an answer.
@@ -80,9 +90,11 @@ type ConversationalService interface {
 	OpenConversation(
 		ctx ConversationalContext,
 		onOpenFn OnOpenFn,
+		onCreatedFn OnCreatedFn,
 		onErrorFn OnErrorFn,
 		onCustomerMessageFn OnCustomerMessageFn,
 		onBotMessageFn OnBotMessageFn,
+		onDialogTerminatedFn OnDialogTerminatedFn,
 		onCloseFn OnCloseFn,
 	) error
 

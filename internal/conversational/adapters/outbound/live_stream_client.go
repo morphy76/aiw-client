@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/morphy76/aiw-client/internal/conversational/application/ports/inbound"
@@ -77,18 +78,55 @@ func (c *LiveStreamClient) OpenSessionStream(
 		return fmt.Errorf("%w: HTTP status %d: %s", model.ErrSSEConnectionFailed, resp.StatusCode, string(body))
 	}
 
+	if err := handler.OnOpen(); err != nil {
+		_ = resp.Body.Close()
+		return err
+	}
+
 	createdCh := make(chan struct{})
 	errCh := make(chan error, 1)
 	var once sync.Once
-	var closedCleanly bool
+
+	var dialogIDMu sync.RWMutex
+	var currentDialogID string
+	var isCancelled atomic.Bool
+
+	cancelFunc := func(requestDialogTermination bool) {
+		if isCancelled.Swap(true) {
+			return // Already cancelled
+		}
+		_ = resp.Body.Close()
+		if requestDialogTermination {
+			dialogIDMu.RLock()
+			dlgID := currentDialogID
+			dialogIDMu.RUnlock()
+			if dlgID != "" {
+				go func() {
+					msgClient := NewMessageClient(c.client, c.baseURL)
+					_ = msgClient.CloseSession(context.Background(), inbound.CloseConversationCommand{
+						ExternalID:  cmd.ExternalID,
+						Tenant:      cmd.Tenant,
+						BearerToken: cmd.BearerToken,
+						Sandbox:     cmd.Sandbox,
+						Headers:     cmd.Headers,
+					}, dlgID)
+				}()
+			}
+		}
+	}
+
+	var closedOnce sync.Once
+	closeStreamOnce := func() {
+		closedOnce.Do(func() {
+			handler.OnClosed()
+		})
+	}
 
 	// Background reader for SSE stream
 	go func() {
 		defer func() {
 			_ = resp.Body.Close()
-			if !closedCleanly {
-				handler.OnClosed()
-			}
+			closeStreamOnce()
 		}()
 
 		scanner := bufio.NewScanner(resp.Body)
@@ -96,6 +134,9 @@ func (c *LiveStreamClient) OpenSessionStream(
 		scanner.Buffer(buf, 1024*1024)
 
 		for scanner.Scan() {
+			if isCancelled.Load() {
+				return
+			}
 			line := scanner.Text()
 			if strings.TrimSpace(line) == "" || strings.HasPrefix(line, ":") {
 				continue
@@ -112,13 +153,19 @@ func (c *LiveStreamClient) OpenSessionStream(
 
 			var event sseRawEvent
 			if err := json.Unmarshal([]byte(data), &event); err != nil {
-				handler.OnError(fmt.Errorf("failed to parse SSE json: %w", err))
+				if !isCancelled.Load() {
+					handler.OnError(fmt.Errorf("failed to parse SSE json: %w", err), cancelFunc)
+				}
 				continue
 			}
 
 			if event.Lifecycle != nil {
 				switch event.Lifecycle.Event {
 				case "created":
+					dialogIDMu.Lock()
+					currentDialogID = event.Lifecycle.DialogID
+					dialogIDMu.Unlock()
+
 					if err := handler.OnCreated(event.Lifecycle.DialogID); err != nil {
 						once.Do(func() {
 							errCh <- err
@@ -129,15 +176,13 @@ func (c *LiveStreamClient) OpenSessionStream(
 						close(createdCh)
 					})
 				case "aborted":
-					closedCleanly = true
-					handler.OnAborted("server aborted conversation")
+					handler.OnDialogTerminated(true, "server aborted conversation")
 					once.Do(func() {
 						errCh <- model.ErrConversationAborted
 					})
 					return
 				case "closed":
-					closedCleanly = true
-					handler.OnClosed()
+					handler.OnDialogTerminated(false, "conversation closed")
 					return
 				}
 			}
@@ -146,18 +191,22 @@ func (c *LiveStreamClient) OpenSessionStream(
 				switch event.Message.Role {
 				case "BOT", "AGENT":
 					if err := handler.OnBotMessage(event.Message.Text); err != nil {
-						handler.OnError(err)
+						if !isCancelled.Load() {
+							handler.OnError(err, cancelFunc)
+						}
 					}
 				case "CUSTOMER":
 					if err := handler.OnCustomerMessage(event.Message.Text); err != nil {
-						handler.OnError(err)
+						if !isCancelled.Load() {
+							handler.OnError(err, cancelFunc)
+						}
 					}
 				}
 			}
 		}
 
-		if err := scanner.Err(); err != nil && ctx.Err() == nil {
-			handler.OnError(err)
+		if err := scanner.Err(); err != nil && ctx.Err() == nil && !isCancelled.Load() {
+			handler.OnError(err, cancelFunc)
 			once.Do(func() {
 				errCh <- err
 			})

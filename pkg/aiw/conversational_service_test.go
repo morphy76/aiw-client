@@ -23,9 +23,6 @@ func TestConversationalService_OnOpenErrorBubbling(t *testing.T) {
 	defer pw.Close()
 
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
-		go func() {
-			_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-test-1\"}}\n\n")
-		}()
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
@@ -52,12 +49,14 @@ func TestConversationalService_OnOpenErrorBubbling(t *testing.T) {
 		func(c aiw.ConversationalContext) error {
 			return customErr
 		},
-		func(c aiw.ConversationalContext, err error) {
+		nil,
+		func(c aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
 			atomic.AddInt32(&onErrorCalled, 1)
 			mu.Lock()
 			errorReported = err
 			mu.Unlock()
 		},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -68,6 +67,61 @@ func TestConversationalService_OnOpenErrorBubbling(t *testing.T) {
 	mu.Lock()
 	assert.Equal(t, customErr, errorReported)
 	mu.Unlock()
+}
+
+func TestConversationalService_OnCreatedCallback(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		go func() {
+			_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-created-999\"}}\n\n")
+		}()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       pr,
+		}, nil
+	})
+
+	clientFacade, err := aiw.NewClientBuilder().
+		WithHTTPClient(client).
+		WithBaseURL("https://dev.lab.aiwave.io").
+		Build()
+	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
+
+	convCtx := aiw.NewConversationalContext(context.Background(), "ext-created-test")
+
+	var onOpenCalled int32
+	var onCreatedCalled int32
+	var capturedDialogID string
+
+	err = convSvc.OpenConversation(
+		convCtx,
+		func(c aiw.ConversationalContext) error {
+			atomic.AddInt32(&onOpenCalled, 1)
+			assert.Empty(t, c.DialogID())
+			return nil
+		},
+		func(c aiw.ConversationalContext, dialogID string) error {
+			atomic.AddInt32(&onCreatedCalled, 1)
+			capturedDialogID = dialogID
+			assert.Equal(t, "dlg-created-999", c.DialogID())
+			return nil
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(1), atomic.LoadInt32(&onOpenCalled))
+	assert.Equal(t, int32(1), atomic.LoadInt32(&onCreatedCalled))
+	assert.Equal(t, "dlg-created-999", capturedDialogID)
+	assert.Equal(t, "dlg-created-999", convCtx.DialogID())
 }
 
 func TestConversationalService_CallbackPanicRecovery(t *testing.T) {
@@ -104,12 +158,14 @@ func TestConversationalService_CallbackPanicRecovery(t *testing.T) {
 		func(c aiw.ConversationalContext) error {
 			panic("something went catastrophically wrong")
 		},
-		func(c aiw.ConversationalContext, err error) {
+		nil,
+		func(c aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
 			atomic.AddInt32(&onErrorCalled, 1)
 			mu.Lock()
 			errorReported = err
 			mu.Unlock()
 		},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -163,6 +219,7 @@ func TestConversationalService_OnBotMessageAndCustomerMessageFlow(t *testing.T) 
 		convCtx,
 		nil,
 		nil,
+		nil,
 		func(c aiw.ConversationalContext, mex string) error {
 			mu.Lock()
 			receivedCustomerMsg = mex
@@ -175,6 +232,7 @@ func TestConversationalService_OnBotMessageAndCustomerMessageFlow(t *testing.T) 
 			mu.Unlock()
 			return nil
 		},
+		nil,
 		nil,
 	)
 	require.NoError(t, err)
@@ -219,7 +277,8 @@ func TestConversationalService_OnBotMessagePanicRecovery(t *testing.T) {
 	err = convSvc.OpenConversation(
 		convCtx,
 		nil,
-		func(c aiw.ConversationalContext, err error) {
+		nil,
+		func(c aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
 			atomic.AddInt32(&onErrorCalled, 1)
 			mu.Lock()
 			errorReported = err
@@ -230,6 +289,7 @@ func TestConversationalService_OnBotMessagePanicRecovery(t *testing.T) {
 			panic("bot message handler panic")
 		},
 		nil,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -239,6 +299,181 @@ func TestConversationalService_OnBotMessagePanicRecovery(t *testing.T) {
 	assert.NotNil(t, errorReported)
 	assert.Contains(t, errorReported.Error(), "panic in OnBotMessageFn callback")
 	mu.Unlock()
+}
+
+func TestConversationalService_OnDialogTerminated(t *testing.T) {
+	t.Run("aborted lifecycle event", func(t *testing.T) {
+		pr, pw := io.Pipe()
+		defer pw.Close()
+
+		client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+			go func() {
+				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-term-abort\"}}\n\n")
+				time.Sleep(10 * time.Millisecond)
+				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"aborted\"}}\n\n")
+			}()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       pr,
+			}, nil
+		})
+
+		clientFacade, err := aiw.NewClientBuilder().
+			WithHTTPClient(client).
+			WithBaseURL("https://dev.lab.aiwave.io").
+			Build()
+		require.NoError(t, err)
+		convSvc := clientFacade.Conversational()
+
+		convCtx := aiw.NewConversationalContext(context.Background(), "ext-term-abort")
+
+		var mu sync.Mutex
+		var terminatedCalled bool
+		var isAbortedVal bool
+		var reasonVal string
+
+		err = convSvc.OpenConversation(
+			convCtx,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			func(c aiw.ConversationalContext, isAborted bool, reason string) error {
+				mu.Lock()
+				terminatedCalled = true
+				isAbortedVal = isAborted
+				reasonVal = reason
+				mu.Unlock()
+				return nil
+			},
+			nil,
+		)
+		require.NoError(t, err)
+
+		time.Sleep(60 * time.Millisecond)
+		mu.Lock()
+		assert.True(t, terminatedCalled)
+		assert.True(t, isAbortedVal)
+		assert.Contains(t, reasonVal, "aborted")
+		mu.Unlock()
+	})
+
+	t.Run("closed lifecycle event", func(t *testing.T) {
+		pr, pw := io.Pipe()
+		defer pw.Close()
+
+		client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+			go func() {
+				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-term-close\"}}\n\n")
+				time.Sleep(10 * time.Millisecond)
+				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"closed\"}}\n\n")
+			}()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       pr,
+			}, nil
+		})
+
+		clientFacade, err := aiw.NewClientBuilder().
+			WithHTTPClient(client).
+			WithBaseURL("https://dev.lab.aiwave.io").
+			Build()
+		require.NoError(t, err)
+		convSvc := clientFacade.Conversational()
+
+		convCtx := aiw.NewConversationalContext(context.Background(), "ext-term-close")
+
+		var mu sync.Mutex
+		var terminatedCalled bool
+		var isAbortedVal bool
+
+		err = convSvc.OpenConversation(
+			convCtx,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			func(c aiw.ConversationalContext, isAborted bool, reason string) error {
+				mu.Lock()
+				terminatedCalled = true
+				isAbortedVal = isAborted
+				mu.Unlock()
+				return nil
+			},
+			nil,
+		)
+		require.NoError(t, err)
+
+		time.Sleep(60 * time.Millisecond)
+		mu.Lock()
+		assert.True(t, terminatedCalled)
+		assert.False(t, isAbortedVal)
+		mu.Unlock()
+	})
+}
+
+func TestConversationalService_OnErrorWithCancelControl(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+
+	var deleteCalled int32
+	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Accept") == "text/event-stream" {
+			go func() {
+				_, _ = fmt.Fprint(pw, "data: {\"lifecycle\":{\"event\":\"created\",\"dialog_id\":\"dlg-cancel-test\"}}\n\n")
+				time.Sleep(10 * time.Millisecond)
+				// Corrupted json to trigger onError with cancel func
+				_, _ = fmt.Fprint(pw, "data: {bad_json\n\n")
+			}()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       pr,
+			}, nil
+		}
+		if req.Method == http.MethodDelete {
+			atomic.AddInt32(&deleteCalled, 1)
+			return &http.Response{
+				StatusCode: http.StatusNoContent,
+				Body:       io.NopCloser(bytes.NewReader(nil)),
+			}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	})
+
+	clientFacade, err := aiw.NewClientBuilder().
+		WithHTTPClient(client).
+		WithBaseURL("https://dev.lab.aiwave.io").
+		Build()
+	require.NoError(t, err)
+	convSvc := clientFacade.Conversational()
+
+	convCtx := aiw.NewConversationalContext(context.Background(), "ext-cancel-test")
+
+	var onErrorCalled int32
+	err = convSvc.OpenConversation(
+		convCtx,
+		nil,
+		nil,
+		func(c aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
+			atomic.AddInt32(&onErrorCalled, 1)
+			assert.NotNil(t, cancel)
+			cancel(true) // Should trigger remote DELETE request
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+
+	assert.Eventually(t, func() bool {
+		return atomic.LoadInt32(&onErrorCalled) == 1 && atomic.LoadInt32(&deleteCalled) == 1
+	}, 2*time.Second, 20*time.Millisecond)
 }
 
 func TestConversationalService_AddCustomerMessageWithoutOpen(t *testing.T) {
@@ -275,9 +510,11 @@ func TestConversationalService_EmptyExternalID(t *testing.T) {
 	err = convSvc.OpenConversation(
 		convCtx,
 		nil,
-		func(c aiw.ConversationalContext, err error) {
+		nil,
+		func(c aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
 			atomic.AddInt32(&onErrorCalled, 1)
 		},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -392,11 +629,15 @@ func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 	err = convSvc.OpenConversation(
 		convCtx,
 		func(c aiw.ConversationalContext) error {
+			return nil
+		},
+		func(c aiw.ConversationalContext, dialogID string) error {
+			assert.Equal(t, "dlg-js-replicate-123", dialogID)
 			assert.Equal(t, "dlg-js-replicate-123", c.DialogID())
 			// Turn 1: Post initial customer message
 			return convSvc.AddCustomerMessage(c, "First question from user")
 		},
-		func(c aiw.ConversationalContext, err error) {
+		func(c aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
 			t.Errorf("unexpected error: %v", err)
 		},
 		func(c aiw.ConversationalContext, mex string) error {
@@ -412,6 +653,7 @@ func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 			// Reached desired turns (2 turns), close conversation as in conversation-test.js
 			return convSvc.CloseConversation(c)
 		},
+		nil,
 		func(c aiw.ConversationalContext) error {
 			atomic.AddInt32(&onCloseCalled, 1)
 			return nil
@@ -572,7 +814,7 @@ func TestConversationalService_AddCustomerMessageWithOptions(t *testing.T) {
 	convSvc := clientFacade.Conversational()
 
 	convCtx := aiw.NewConversationalContext(context.Background(), "user-att-test")
-	err = convSvc.OpenConversation(convCtx, nil, nil, nil, nil, nil)
+	err = convSvc.OpenConversation(convCtx, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	err = convSvc.AddCustomerMessageWithOptions(convCtx, "Here is invoice", aiw.MessageOptions{
@@ -588,4 +830,3 @@ func TestConversationalService_AddCustomerMessageWithOptions(t *testing.T) {
 	assert.Contains(t, sentJSON, "invoice.pdf")
 	assert.Contains(t, sentJSON, "ref-invoice-101")
 }
-

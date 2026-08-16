@@ -56,13 +56,31 @@ func main() {
 	// Channel to signal when the conversation has completed
 	doneCh := make(chan struct{})
 
-	// onOpen: Triggered when the AIW server creates the session and assigns a Dialog ID.
+	// onOpen: Triggered when the SSE transport connection is established (HTTP 200).
 	onOpen := func(c aiw.ConversationalContext) error {
-		fmt.Printf("✅ Connected! Dialog ID: %s\n", c.DialogID())
+		fmt.Println("🔗 SSE transport stream connected.")
+		return nil
+	}
+
+	// onCreated: Triggered when the AIW server assigns a Dialog ID ("created" event).
+	onCreated := func(c aiw.ConversationalContext, dialogID string) error {
+		fmt.Printf("✅ Connected! Dialog ID: %s\n", dialogID)
 		fmt.Println("💬 Sending initial customer message...")
 
-		// Send customer message once the connection is established
+		// Send customer message once the dialog is created and active
 		return convService.AddCustomerMessage(c, "Hello! How do I reset my password?")
+	}
+
+	// onError: Triggered if any stream, network, or server error occurs.
+	onError := func(_ aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
+		fmt.Printf("❌ Error received: %v\n", err)
+		cancel(true)
+	}
+
+	// onCustomerMessage: Triggered when the customer message is acknowledged.
+	onCustomerMessage := func(_ aiw.ConversationalContext, msg string) error {
+		fmt.Printf("👤 Customer Sent: %s\n", msg)
+		return nil
 	}
 
 	// onBotMessage: Triggered whenever the AI bot returns an answer.
@@ -74,15 +92,14 @@ func main() {
 		return convService.CloseConversation(c)
 	}
 
-	// onCustomerMessage: Triggered when the customer message is acknowledged.
-	onCustomerMessage := func(_ aiw.ConversationalContext, msg string) error {
-		fmt.Printf("👤 Customer Sent: %s\n", msg)
+	// onDialogTerminated: Triggered when the dialog ends on the server side.
+	onDialogTerminated := func(_ aiw.ConversationalContext, isAborted bool, reason string) error {
+		if isAborted {
+			fmt.Printf("⚠️ Dialog aborted by server: %s\n", reason)
+		} else {
+			fmt.Printf("ℹ️ Dialog closed cleanly: %s\n", reason)
+		}
 		return nil
-	}
-
-	// onError: Triggered if any stream, network, or server error occurs.
-	onError := func(_ aiw.ConversationalContext, err error) {
-		fmt.Printf("❌ Error received: %v\n", err)
 	}
 
 	// onClose: Triggered when the conversation is gracefully terminated.
@@ -94,7 +111,16 @@ func main() {
 
 	// Connect to the live SSE stream
 	fmt.Println("⏳ Connecting to AIW conversational stream...")
-	err = convService.OpenConversation(convCtx, onOpen, onError, onCustomerMessage, onBotMessage, onClose)
+	err = convService.OpenConversation(
+		convCtx,
+		onOpen,
+		onCreated,
+		onError,
+		onCustomerMessage,
+		onBotMessage,
+		onDialogTerminated,
+		onClose,
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open conversation: %v\n", err)
 		os.Exit(1)

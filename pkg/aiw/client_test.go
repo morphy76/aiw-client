@@ -78,6 +78,7 @@ func TestClient_LifecycleAndConversationalFlow(t *testing.T) {
 	assert.Equal(t, "cust-test-101", convCtx.ExternalID())
 
 	var onOpenCalled int32
+	var onCreatedCalled int32
 	var onBotMsgCalled int32
 
 	// Open conversation
@@ -86,10 +87,15 @@ func TestClient_LifecycleAndConversationalFlow(t *testing.T) {
 		func(c aiw.ConversationalContext) error {
 			atomic.AddInt32(&onOpenCalled, 1)
 			assert.Equal(t, "cust-test-101", c.ExternalID())
-			assert.Equal(t, "diag-client-101", c.DialogID())
 			return nil
 		},
-		func(c aiw.ConversationalContext, err error) {
+		func(c aiw.ConversationalContext, dialogID string) error {
+			atomic.AddInt32(&onCreatedCalled, 1)
+			assert.Equal(t, "cust-test-101", c.ExternalID())
+			assert.Equal(t, "diag-client-101", dialogID)
+			return nil
+		},
+		func(c aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
 			t.Fatalf("unexpected error callback: %v", err)
 		},
 		nil,
@@ -97,12 +103,14 @@ func TestClient_LifecycleAndConversationalFlow(t *testing.T) {
 			atomic.AddInt32(&onBotMsgCalled, 1)
 			return nil
 		},
+		nil,
 		func(c aiw.ConversationalContext) error {
 			return nil
 		},
 	)
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&onOpenCalled))
+	assert.Equal(t, int32(1), atomic.LoadInt32(&onCreatedCalled))
 	assert.Equal(t, "diag-client-101", convCtx.DialogID())
 
 	// Add customer message
@@ -130,9 +138,11 @@ func TestClient_ErrorHandlingInFlow(t *testing.T) {
 	err = convSvc.OpenConversation(
 		invalidCtx,
 		nil,
-		func(c aiw.ConversationalContext, err error) {
+		nil,
+		func(c aiw.ConversationalContext, err error, cancel aiw.CancelStreamFunc) {
 			errReported = err
 		},
+		nil,
 		nil,
 		nil,
 		nil,
