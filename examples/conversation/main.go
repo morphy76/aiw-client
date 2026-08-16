@@ -147,11 +147,25 @@ func ensureConfig(scanner *bufio.Scanner, cfg *Config) bool {
 
 // terminalPrinter ensures asynchronous bot SSE responses and user prompts do not interleave on the CLI.
 type terminalPrinter struct {
-	mu sync.Mutex
+	mu        sync.Mutex
+	modelName string
 }
 
-func newTerminalPrinter() *terminalPrinter {
-	return &terminalPrinter{}
+func newTerminalPrinter(modelName string) *terminalPrinter {
+	if modelName == "" {
+		modelName = "Bot"
+	}
+	return &terminalPrinter{
+		modelName: modelName,
+	}
+}
+
+func (p *terminalPrinter) SetModelName(modelName string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if modelName != "" {
+		p.modelName = modelName
+	}
 }
 
 func (p *terminalPrinter) Prompt() {
@@ -165,7 +179,7 @@ func (p *terminalPrinter) BotMessage(rawMessage string) {
 	defer p.mu.Unlock()
 
 	answer, sources := parseBotAnswer(rawMessage)
-	fmt.Printf("\r🤖 Bot > %s\n", answer)
+	fmt.Printf("\r🤖 %s > %s\n", p.modelName, answer)
 	for i, s := range sources {
 		if s.Title != "" {
 			fmt.Printf("   📚 [%d] %s (%s)\n", i+1, s.Title, s.ID)
@@ -222,7 +236,7 @@ func main() {
 	defer func() { _ = client.Close() }()
 
 	convService := client.Conversational()
-	printer := newTerminalPrinter()
+	printer := newTerminalPrinter(cfg.DialogModel)
 
 	// Main session loop (allows returning to menu after /close)
 	for {
@@ -262,7 +276,7 @@ func main() {
 			if history, err := convService.RestoreConversation(convCtx); err != nil {
 				printer.Error(fmt.Errorf("could not restore history: %w", err))
 			} else {
-				renderConversationHistory(history)
+				renderConversationHistory(history, cfg.DialogModel)
 			}
 		}
 
@@ -600,7 +614,7 @@ func handleSlashCommand(
 		if err != nil {
 			printer.Error(fmt.Errorf("failed to fetch history: %w", err))
 		} else {
-			renderConversationHistory(history)
+			renderConversationHistory(history, dialogModel)
 		}
 		printer.Prompt()
 		return actionHandledStayInChat
@@ -669,7 +683,10 @@ func parseBotAnswer(raw string) (string, []aiw.Source) {
 	return raw, nil
 }
 
-func renderConversationHistory(messages []aiw.Message) {
+func renderConversationHistory(messages []aiw.Message, modelName string) {
+	if modelName == "" {
+		modelName = "Bot"
+	}
 	if len(messages) == 0 {
 		fmt.Println("ℹ️  No previous messages recorded in this session.")
 		return
@@ -683,13 +700,13 @@ func renderConversationHistory(messages []aiw.Message) {
 			fmt.Printf("  [%s] 👤 You: %s\n", tsStr, m.Content)
 		} else {
 			if m.Answer != nil {
-				fmt.Printf("  [%s] 🤖 Bot: %s\n", tsStr, m.Answer.Text)
+				fmt.Printf("  [%s] 🤖 %s: %s\n", tsStr, modelName, m.Answer.Text)
 				for idx, src := range m.Answer.Sources {
 					fmt.Printf("          📚 [%d] %s (%s)\n", idx+1, src.Title, src.ID)
 				}
 			} else {
 				answer, sources := parseBotAnswer(m.Content)
-				fmt.Printf("  [%s] 🤖 Bot: %s\n", tsStr, answer)
+				fmt.Printf("  [%s] 🤖 %s: %s\n", tsStr, modelName, answer)
 				for idx, src := range sources {
 					fmt.Printf("          📚 [%d] %s (%s)\n", idx+1, src.Title, src.ID)
 				}
@@ -710,8 +727,19 @@ func buildExternalID(tenant, user, model string) string {
 	if user == "" {
 		return ""
 	}
-	if strings.HasPrefix(user, tenant+"-") && strings.HasSuffix(user, "-"+model) {
+	// If already starting with tenant prefix, don't prepend tenant or append model again
+	if tenant != "" && strings.HasPrefix(user, tenant+"-") {
 		return user
+	}
+	// If already in user-model format without tenant prefix
+	if model != "" && strings.HasSuffix(user, "-"+model) {
+		if tenant != "" {
+			return fmt.Sprintf("%s-%s", tenant, user)
+		}
+		return user
+	}
+	if tenant == "" {
+		return fmt.Sprintf("%s-%s", user, model)
 	}
 	return fmt.Sprintf("%s-%s-%s", tenant, user, model)
 }
