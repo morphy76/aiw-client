@@ -315,33 +315,33 @@ func TestHTTPGateway_ListSessions(t *testing.T) {
 		}
 
 		jsonResp := `[
-			{
-				"deleteDate": "1970-01-01",
-				"insertDate": "1970-01-01",
-				"updateDate": "1970-01-01",
-				"applicationNamespace": "almawave.com",
-				"callerInRole": false,
-				"closeTime": "1970-01-01",
-				"externalId": "session-1",
-				"externalSystem": "string",
-				"language": "en",
-				"model": "RocchettoEmbeddingsV2",
-				"recording": true,
-				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Account support inquiry</value></subItem></item></userTurn></session></re[...]",
-				"sandbox": false,
-				"sessionId": "theSessionId-1",
-				"startTime": "2026-08-15 09:00:00",
-				"status": "CLOSED",
-				"authGroup": "string",
-				"id": 0,
-				"version": 0
-			},
-			{
-				"id": 102,
-				"externalId": "session-2",
-				"insertDate": "2026-08-14 15:30:00",
-				"recordingData": "<recording><session><userTurn dateTime=\"14/08/2026 15:30:00.000\"><item id=\"u_u\"><subItem><value>Order tracking issue</value></subItem></item></userTurn></session></recor[...]",
-			}
+		  {
+		    "deleteDate": "1970-01-01",
+		    "insertDate": "1970-01-01",
+		    "updateDate": "1970-01-01",
+		    "applicationNamespace": "almawave.com",
+		    "callerInRole": false,
+		    "closeTime": "1970-01-01",
+		    "externalId": "session-1",
+		    "externalSystem": "string",
+		    "language": "en",
+		    "model": "RocchettoEmbeddingsV2",
+		    "recording": true,
+		    "recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Account support inquiry</value></subItem></item></userTurn></session></recording>",
+		    "sandbox": false,
+		    "sessionId": "theSessionId-1",
+		    "startTime": "2026-08-15 09:00:00",
+		    "status": "CLOSED",
+		    "authGroup": "string",
+		    "id": 0,
+		    "version": 0
+		  },
+		  {
+		    "id": 102,
+		    "externalId": "session-2",
+		    "insertDate": "2026-08-14 15:30:00",
+		    "recordingData": "<recording><session><userTurn dateTime=\"14/08/2026 15:30:00.000\"><item id=\"u_u\"><subItem><value>Order tracking issue</value></subItem></item></userTurn></session></recording>"
+		  }
 		]`
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -398,10 +398,10 @@ func TestHTTPGateway_GetSessionRecording(t *testing.T) {
 		}
 
 		jsonResp := `[
-			{
-				"id": 101,
-				"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Hello previous session</value></subItem></item></userTurn><systemTurn dat[...]",
-			}
+		  {
+		    "id": 101,
+		    "recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Hello previous session</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"s_s\"><subItem><value>Restored response</value></subItem></item></systemTurn></session></recording>"
+		  }
 		]`
 		return &http.Response{
 			StatusCode: http.StatusOK,
