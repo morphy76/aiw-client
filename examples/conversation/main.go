@@ -48,7 +48,6 @@ type Config struct {
 func parseFlags() Config {
 	baseURL := flag.String("url", "https://portal.aiwave.ai", "AIW platform base URL (e.g. https://portal.aiwave.ai)")
 	token := flag.String("token", "", "Bearer PAT Token")
-	tenant := flag.String("tenant", "", "Tenant ID (x-cognitive-system)")
 	model := flag.String("model", "", "Target dialog model name (e.g. Rocchetto)")
 	user := flag.String("user", "", "Customer username (forms <tenant>-<username>-<model>)")
 	username := flag.String("username", "", "Alias for -user")
@@ -70,10 +69,15 @@ func parseFlags() Config {
 		u = aiw.ExtractUsernameFromToken(*token)
 	}
 
+	tenant := ""
+	if *token != "" {
+		tenant = aiw.ExtractTenantFromToken(*token)
+	}
+
 	return Config{
 		BaseURL:     *baseURL,
 		BearerToken: *token,
-		Tenant:      *tenant,
+		Tenant:      tenant,
 		DialogModel: *model,
 		Username:    u,
 		ExternalID:  *externalID,
@@ -96,33 +100,6 @@ func ensureConfig(scanner *bufio.Scanner, cfg *Config) bool {
 		cfg.BaseURL = val
 	}
 
-	if strings.TrimSpace(cfg.Tenant) == "" {
-		for {
-			fmt.Print("Enter Tenant ID: ")
-			if !scanner.Scan() {
-				return false
-			}
-			val := strings.TrimSpace(scanner.Text())
-			if val != "" {
-				cfg.Tenant = val
-				break
-			}
-			fmt.Println("❌ Tenant ID is required.")
-		}
-	}
-
-	if strings.TrimSpace(cfg.DialogModel) == "" {
-		fmt.Print("Enter Dialog Model Name [Rocchetto]: ")
-		if !scanner.Scan() {
-			return false
-		}
-		val := strings.TrimSpace(scanner.Text())
-		if val == "" {
-			val = "Rocchetto"
-		}
-		cfg.DialogModel = val
-	}
-
 	if strings.TrimSpace(cfg.BearerToken) == "" {
 		for {
 			fmt.Print("Enter Bearer PAT Token: ")
@@ -138,11 +115,27 @@ func ensureConfig(scanner *bufio.Scanner, cfg *Config) bool {
 		}
 	}
 
-	if cfg.Username == "" && cfg.BearerToken != "" {
-		extracted := aiw.ExtractUsernameFromToken(cfg.BearerToken)
-		if extracted != "" {
-			cfg.Username = extracted
+	if strings.TrimSpace(cfg.Tenant) == "" && cfg.BearerToken != "" {
+		cfg.Tenant = aiw.ExtractTenantFromToken(cfg.BearerToken)
+	}
+	if cfg.Tenant == "" {
+		cfg.Tenant = "default"
+	}
+
+	if strings.TrimSpace(cfg.Username) == "" && cfg.BearerToken != "" {
+		cfg.Username = aiw.ExtractUsernameFromToken(cfg.BearerToken)
+	}
+
+	if strings.TrimSpace(cfg.DialogModel) == "" {
+		fmt.Print("Enter Dialog Model Name [Rocchetto]: ")
+		if !scanner.Scan() {
+			return false
 		}
+		val := strings.TrimSpace(scanner.Text())
+		if val == "" {
+			val = "Rocchetto"
+		}
+		cfg.DialogModel = val
 	}
 
 	return true
@@ -254,7 +247,6 @@ func main() {
 		convCtx, err := aiw.NewConversationalContextBuilder().
 			WithContext(ctx).
 			WithExternalID(externalID).
-			WithTenant(cfg.Tenant).
 			WithDialogModel(cfg.DialogModel).
 			WithBearerToken(cfg.BearerToken).
 			WithSandbox(cfg.Sandbox).
@@ -384,7 +376,6 @@ func promptListAndSelectSession(
 	queryCtx, err := aiw.NewConversationalContextBuilder().
 		WithContext(ctx).
 		WithExternalID(filterExternalID).
-		WithTenant(cfg.Tenant).
 		WithBearerToken(cfg.BearerToken).
 		WithDialogModel(cfg.DialogModel).
 		WithSandbox(cfg.Sandbox).

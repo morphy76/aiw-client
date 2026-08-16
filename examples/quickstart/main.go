@@ -38,9 +38,8 @@ func main() {
 	convCtx, err := aiw.NewConversationalContextBuilder().
 		WithContext(ctx).
 		WithExternalID("sample_user_001").
-		WithTenant(getEnvOrDefault("TENANT", "almawave.com")).
 		WithDialogModel(getEnvOrDefault("DIALOG_MODEL_NAME", "RocchettoEmbeddingsV2")).
-		WithBearerToken(os.Getenv("PAT")). // Bearer PAT token
+		WithBearerToken(os.Getenv("PAT")). // Bearer PAT token (tenant is automatically derived from token)
 		Build()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to build ConversationalContext: %v\n", err)

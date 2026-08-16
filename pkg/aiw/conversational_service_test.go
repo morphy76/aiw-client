@@ -298,6 +298,10 @@ func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 	var deleteReceived bool
 	var mu sync.Mutex
 
+	mockToken := createTestJWT(map[string]any{
+		"tenant": "my-tenant",
+	})
+
 	var convSvc aiw.ConversationalService
 
 	client := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
@@ -320,7 +324,7 @@ func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 
 			assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
 			assert.Equal(t, "application/json", req.Header.Get("Accept"))
-			assert.Equal(t, "Bearer my-pat-token", req.Header.Get("Authorization"))
+			assert.Equal(t, "Bearer "+mockToken, req.Header.Get("Authorization"))
 			assert.Equal(t, "live:my-tenant", req.Header.Get("x-cognitive-system"))
 			assert.Equal(t, "false", req.Header.Get("x-cognitive-sandbox"))
 			assert.Equal(t, "/dialog/api/conversation/v1.0/message/dlg-js-replicate-123", req.URL.Path)
@@ -346,7 +350,7 @@ func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 			deleteReceived = true
 			mu.Unlock()
 
-			assert.Equal(t, "Bearer my-pat-token", req.Header.Get("Authorization"))
+			assert.Equal(t, "Bearer "+mockToken, req.Header.Get("Authorization"))
 			assert.Equal(t, "live:my-tenant", req.Header.Get("x-cognitive-system"))
 			assert.Equal(t, "/dialog/api/conversation/v1.0/user-ext-999/dlg-js-replicate-123", req.URL.Path)
 
@@ -374,8 +378,7 @@ func TestConversationalService_FullMultiTurnFlowReplicatingJS(t *testing.T) {
 
 	convCtx, err := aiw.NewConversationalContextBuilder().
 		WithExternalID("user-ext-999").
-		WithTenant("my-tenant").
-		WithBearerToken("my-pat-token").
+		WithBearerToken(mockToken).
 		WithSandbox(false).
 		Build()
 	require.NoError(t, err)

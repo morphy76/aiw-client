@@ -11,17 +11,21 @@ import (
 )
 
 func TestConversationalContextBuilder_Build(t *testing.T) {
-	t.Run("build with full configuration", func(t *testing.T) {
+	t.Run("build with full configuration and token with tenantId and subscriptionId", func(t *testing.T) {
 		parentCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
+		token := createTestJWT(map[string]any{
+			"tenantId":       "customer",
+			"subscriptionId": "service",
+		})
 
 		convCtx, err := aiw.NewConversationalContextBuilder().
 			WithContext(parentCtx).
 			WithExternalID("user-ext-999").
 			WithDialogID("dlg-init-123").
-			WithTenant("customer-service").
 			WithDialogModel("RocchettoEmbeddingsV2").
-			WithBearerToken("secret-pat-token").
+			WithBearerToken(token).
 			WithSandbox(true).
 			WithHeader("X-Custom-Trace", "trace-777").
 			Build()
@@ -33,7 +37,7 @@ func TestConversationalContextBuilder_Build(t *testing.T) {
 		assert.Equal(t, "dlg-init-123", convCtx.DialogID())
 		assert.Equal(t, "customer-service", convCtx.Tenant())
 		assert.Equal(t, "RocchettoEmbeddingsV2", convCtx.DialogModel())
-		assert.Equal(t, "secret-pat-token", convCtx.BearerToken())
+		assert.Equal(t, token, convCtx.BearerToken())
 		assert.True(t, convCtx.Sandbox())
 		assert.Equal(t, "live:customer-service", convCtx.CognitiveSystemHeader())
 		assert.Equal(t, "trace-777", convCtx.Headers()["X-Custom-Trace"])
@@ -42,6 +46,40 @@ func TestConversationalContextBuilder_Build(t *testing.T) {
 		deadline, ok := convCtx.Deadline()
 		assert.True(t, ok)
 		assert.True(t, deadline.After(time.Now()))
+	})
+
+	t.Run("build with token extracting tenant from tenant claim", func(t *testing.T) {
+		token := createTestJWT(map[string]any{
+			"tenant": "finance",
+		})
+
+		convCtx, err := aiw.NewConversationalContextBuilder().
+			WithContext(context.Background()).
+			WithExternalID("ext-builder-helper").
+			WithDialogModel("Rocchetto").
+			WithBearerToken(token).
+			Build()
+
+		require.NoError(t, err)
+		assert.Equal(t, "ext-builder-helper", convCtx.ExternalID())
+		assert.Equal(t, "finance", convCtx.Tenant())
+		assert.Equal(t, "live:finance", convCtx.CognitiveSystemHeader())
+	})
+
+	t.Run("build with token extracting tenant from email domain", func(t *testing.T) {
+		token := createTestJWT(map[string]any{
+			"email": "developer@almawave.com",
+		})
+
+		convCtx, err := aiw.NewConversationalContextBuilder().
+			WithExternalID("ext-email-user").
+			WithBearerToken(token).
+			Build()
+
+		require.NoError(t, err)
+		assert.Equal(t, "ext-email-user", convCtx.ExternalID())
+		assert.Equal(t, "almawave.com", convCtx.Tenant())
+		assert.Equal(t, "live:almawave.com", convCtx.CognitiveSystemHeader())
 	})
 
 	t.Run("build with defaults", func(t *testing.T) {
@@ -70,26 +108,14 @@ func TestConversationalContextBuilder_Build(t *testing.T) {
 		assert.Nil(t, convCtx)
 	})
 
-	t.Run("fluent helper NewConversationalContextWithBuilder", func(t *testing.T) {
-		convCtx, err := aiw.NewConversationalContextBuilder().
-			WithContext(context.Background()).
-			WithExternalID("ext-builder-helper").
-			WithTenant("finance").
-			WithDialogModel("Rocchetto").
-			WithBearerToken("tok-123").
-			Build()
+	t.Run("mutation via WithDialogID preserves configurations and extracted tenant", func(t *testing.T) {
+		token := createTestJWT(map[string]any{
+			"tenant": "support",
+		})
 
-		require.NoError(t, err)
-		assert.Equal(t, "ext-builder-helper", convCtx.ExternalID())
-		assert.Equal(t, "finance", convCtx.Tenant())
-		assert.Equal(t, "live:finance", convCtx.CognitiveSystemHeader())
-	})
-
-	t.Run("mutation via WithDialogID preserves configurations", func(t *testing.T) {
 		convCtx, err := aiw.NewConversationalContextBuilder().
 			WithExternalID("user-immutable").
-			WithTenant("support").
-			WithBearerToken("token-xyz").
+			WithBearerToken(token).
 			Build()
 
 		require.NoError(t, err)
@@ -100,7 +126,7 @@ func TestConversationalContextBuilder_Build(t *testing.T) {
 		assert.Equal(t, "user-immutable", cloned.ExternalID())
 		assert.Equal(t, "dlg-assigned-456", cloned.DialogID())
 		assert.Equal(t, "support", cloned.Tenant())
-		assert.Equal(t, "token-xyz", cloned.BearerToken())
+		assert.Equal(t, token, cloned.BearerToken())
 		assert.Equal(t, "live:support", cloned.CognitiveSystemHeader())
 	})
 }

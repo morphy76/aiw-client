@@ -13,11 +13,11 @@ var (
 
 // ConversationalContextBuilder provides a fluent builder to construct ConversationalContext instances
 // with all necessary configurations for open conversation and message exchange.
+// The tenant namespace is automatically extracted from the provided Bearer token / PAT claims.
 type ConversationalContextBuilder struct {
 	ctx         context.Context
 	externalID  string
 	dialogID    string
-	tenant      string
 	dialogModel string
 	bearerToken string
 	sandbox     bool
@@ -28,7 +28,6 @@ type ConversationalContextBuilder struct {
 func NewConversationalContextBuilder() *ConversationalContextBuilder {
 	return &ConversationalContextBuilder{
 		ctx:     context.Background(),
-		tenant:  "default",
 		headers: make(map[string]string),
 	}
 }
@@ -53,15 +52,6 @@ func (b *ConversationalContextBuilder) WithDialogID(dialogID string) *Conversati
 	return b
 }
 
-// WithTenant sets the tenant namespace (e.g. "default", "customer-service").
-func (b *ConversationalContextBuilder) WithTenant(tenant string) *ConversationalContextBuilder {
-	trimmed := strings.TrimSpace(tenant)
-	if trimmed != "" {
-		b.tenant = trimmed
-	}
-	return b
-}
-
 // WithDialogModel sets the target dialog model (e.g., "RocchettoEmbeddingsV2", "Rocchetto").
 func (b *ConversationalContextBuilder) WithDialogModel(model string) *ConversationalContextBuilder {
 	b.dialogModel = strings.TrimSpace(model)
@@ -69,6 +59,7 @@ func (b *ConversationalContextBuilder) WithDialogModel(model string) *Conversati
 }
 
 // WithBearerToken sets the personal access token (PAT) / bearer token.
+// The tenant namespace is automatically resolved from this token's claims.
 func (b *ConversationalContextBuilder) WithBearerToken(token string) *ConversationalContextBuilder {
 	b.bearerToken = strings.TrimSpace(token)
 	return b
@@ -100,7 +91,8 @@ func (b *ConversationalContextBuilder) WithHeaders(headers map[string]string) *C
 	return b
 }
 
-// Build validates the builder configuration and returns a ConversationalContext instance.
+// Build validates the builder configuration, extracts the tenant from Bearer token claims,
+// and returns a ConversationalContext instance.
 func (b *ConversationalContextBuilder) Build() (ConversationalContext, error) {
 	if b.externalID == "" {
 		return nil, ErrMissingExternalID
@@ -108,8 +100,10 @@ func (b *ConversationalContextBuilder) Build() (ConversationalContext, error) {
 	if b.ctx == nil {
 		b.ctx = context.Background()
 	}
-	if b.tenant == "" {
-		b.tenant = "default"
+
+	tenant := ExtractTenantFromToken(b.bearerToken)
+	if tenant == "" {
+		tenant = "default"
 	}
 
 	headersCopy := make(map[string]string, len(b.headers))
@@ -121,10 +115,11 @@ func (b *ConversationalContextBuilder) Build() (ConversationalContext, error) {
 		Context:     b.ctx,
 		externalID:  b.externalID,
 		dialogID:    b.dialogID,
-		tenant:      b.tenant,
+		tenant:      tenant,
 		dialogModel: b.dialogModel,
 		bearerToken: b.bearerToken,
 		sandbox:     b.sandbox,
 		headers:     headersCopy,
 	}, nil
 }
+

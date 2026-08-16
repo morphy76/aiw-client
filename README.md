@@ -29,6 +29,7 @@ github.com/morphy76/aiw-client/
 │   ├── conversational_service.go         # Driving Adapter Implementation
 │   ├── context.go                        # ConversationalContext
 │   ├── context_builder.go                # ConversationalContextBuilder
+│   ├── jwt.go                            # JWT Token Claims & Username Parsing Utilities
 │   └── options.go                        # Client Configuration Options
 │
 └── internal/
@@ -62,8 +63,9 @@ github.com/morphy76/aiw-client/
   - `OnBotMessageFn`: Called when `message.event == "messageAdded"` with role `BOT` / `AGENT`.
   - `OnErrorFn`: Called upon network/stream failures, abort events (`lifecycle.event == "aborted"`), or callback errors.
   - `OnCloseFn`: Called when session closes (`lifecycle.event == "closed"`).
-- **Fluent Context Builder**: `ConversationalContextBuilder` to configure customer external ID, tenant (`x-cognitive-system`), target dialog model, bearer token (PAT), sandbox mode, and custom headers.
-- **Conversational Context**: Wraps standard Go `context.Context` (for timeout/cancellation propagation) with customer metadata (`ExternalID`) and thread-safe session tracking (`DialogID`).
+- **Fluent Context Builder**: `ConversationalContextBuilder` to configure customer external ID, target dialog model, bearer token (PAT), sandbox mode, and custom headers (tenant is automatically derived from the Bearer token).
+- **Conversational Context**: Wraps standard Go `context.Context` (for timeout/cancellation propagation) with customer metadata (`ExternalID`), automatically resolved tenant (`Tenant()`), and thread-safe session tracking (`DialogID`).
+- **JWT & Token Utilities**: Decode JWT payloads safely to automatically extract tenant namespaces (`ExtractTenantFromToken`), caller usernames (`ExtractUsernameFromToken`), and email addresses (`ExtractEmailFromToken`) following hierarchical fallback rules.
 - **Hexagonal / DDD Structure**: Decoupled domain models, strict boundary interfaces, and swappable outbound adapters.
 - **Structured Logging**: Context-aware `zerolog` structured logging on service boundaries with execution duration tracking.
 - **Concurrency & Race-Condition Safe**: Fully tested with Go race detector (`-race`).
@@ -88,33 +90,32 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/morphy76/aiw-client/pkg/aiw"
 )
 
 func main() {
-	// 1. Initialize the client facade via ClientBuilder
+	// 1. Initialize the client facade with Base URL and timeout
 	client, err := aiw.NewClientBuilder().
+		WithBaseURL("https://dev.lab.aiwave.io").
 		WithTimeout(30 * time.Second).
 		Build()
 	if err != nil {
 		panic(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
-	// 2. Build ConversationalContext with tenant, dialog model, and auth
+	// 2. Build ConversationalContext (tenant is automatically resolved from Bearer PAT token)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	convCtx, err := aiw.NewConversationalContextBuilder().
 		WithContext(ctx).
-		WithExternalID("customer-12345").
-		WithTenant("default").
+		WithExternalID("sample_user_001").
 		WithDialogModel("RocchettoEmbeddingsV2").
-		WithBearerToken("your-pat-bearer-token").
-		WithSandbox(false).
-		WithBaseURL("https://dev.lab.aiwave.io").
+		WithBearerToken(os.Getenv("PAT")).
 		Build()
 	if err != nil {
 		panic(err)
@@ -123,37 +124,48 @@ func main() {
 	// 3. Obtain the conversational service
 	convService := client.Conversational()
 
+	// Channel to wait for the asynchronous conversational flow to complete
+	doneCh := make(chan struct{})
+
 	// 4. Open a conversation with reactive lifecycle & message callbacks
 	err = convService.OpenConversation(
 		convCtx,
-		// onOpenFn
+		// onOpenFn: Session established; send initial message
 		func(c aiw.ConversationalContext) error {
-			fmt.Printf("Session established! Dialog ID: %s, Model: %s\n", c.DialogID(), c.DialogModel())
-			// Dispatch initial greeting
-			return convService.AddCustomerMessage(c, "Hello! How can I track my order?")
+			fmt.Printf("Connected! Dialog ID: %s, Model: %s, Tenant: %s\n", c.DialogID(), c.DialogModel(), c.Tenant())
+			return convService.AddCustomerMessage(c, "Hello! How do I reset my password?")
 		},
-		// onErrorFn
+		// onErrorFn: Handle stream or network errors
 		func(c aiw.ConversationalContext, err error) {
 			fmt.Printf("Error encountered for %s: %v\n", c.ExternalID(), err)
 		},
-		// onCustomerMessageFn (echo / confirmation)
+		// onCustomerMessageFn: Message acknowledgment
 		func(c aiw.ConversationalContext, mex string) error {
 			fmt.Printf("[%s] Customer Sent: %s\n", c.DialogID(), mex)
 			return nil
 		},
-		// onBotMessageFn (AI agent response)
-		func(c aiw.ConversationalContext, mex string) error {
-			fmt.Printf("[%s] AI Bot Response: %s\n", c.DialogID(), mex)
-			return nil
+		// onBotMessageFn: AI bot response; close session when done
+		func(c aiw.ConversationalContext, answer string) error {
+			fmt.Printf("[%s] AI Bot Response: %s\n", c.DialogID(), answer)
+			return convService.CloseConversation(c)
 		},
-		// onCloseFn
+		// onCloseFn: Conversation terminated cleanly
 		func(c aiw.ConversationalContext) error {
-			fmt.Println("Conversation closed.")
+			fmt.Println("Conversation closed cleanly.")
+			close(doneCh)
 			return nil
 		},
 	)
 	if err != nil {
 		panic(err)
+	}
+
+	// 5. Await session completion or context timeout
+	select {
+	case <-doneCh:
+		fmt.Println("Conversational flow finished successfully.")
+	case <-ctx.Done():
+		fmt.Println("Conversation timed out.")
 	}
 }
 ```
@@ -168,7 +180,14 @@ client, err := aiw.NewClientBuilder().
     WithTimeout(20 * time.Second).
     Build()
 
-// Option B: Injecting a mock ConversationalService for unit testing
+// Option B: Functional options initialization
+client, err := aiw.New(
+    aiw.WithBaseURL("https://portal.aiwave.ai"),
+    aiw.WithHTTPClient(customHTTPClient),
+    aiw.WithTimeout(20 * time.Second),
+)
+
+// Option C: Injecting a mock ConversationalService for unit testing
 client, err := aiw.NewClientBuilder().
     WithConversationalService(mockService).
     Build()
@@ -193,7 +212,7 @@ The repository includes runnable, educational examples under `examples/`:
 3. **[Interactive CLI Chat (`examples/conversation`)](file:///Users/R.Pasquini/Projects/side/aiw-client/examples/conversation/main.go)**:
    Full-featured terminal chat with interactive session selector (start new vs restore past session), real-time SSE streaming, and in-chat slash commands (`/history`, `/sessions`, `/help`, `/clear`, `/exit`).
    ```bash
-   go run ./examples/conversation -token "your-pat-token" -tenant "almawave.com" -model "RocchettoEmbeddingsV2"
+   go run ./examples/conversation -token "your-pat-token" -model "RocchettoEmbeddingsV2"
    ```
 
 
