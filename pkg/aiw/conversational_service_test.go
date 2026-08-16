@@ -1,7 +1,6 @@
 package aiw_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
