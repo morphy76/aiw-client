@@ -702,7 +702,7 @@ func TestConversationalService_ListSessions(t *testing.T) {
 					"language": "en",
 					"model": "RocchettoEmbeddingsV2",
 					"recording": true,
-					"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Password reset inquiry</value></subItem></item></userTurn></session></rec[...]\n					", 
+					"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Password reset inquiry</value></subItem></item></userTurn></session></recording>",
 					"sandbox": false,
 					"sessionId": "theSessionId",
 					"startTime": "2026-08-15 09:00:00",
@@ -748,7 +748,8 @@ func TestConversationalService_RestoreConversation(t *testing.T) {
 		jsonResp := `[
 				{
 					"id": 88,
-					"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Can I return an item?</value></subItem></item></userTurn><systemTurn date[...]\n				}
+					"recordingData": "<recording><session><userTurn dateTime=\"15/08/2026 09:00:00.000\"><item id=\"u_u\"><subItem><value>Can I return an item?</value></subItem></item></userTurn><systemTurn dateTime=\"15/08/2026 09:00:02.000\"><item id=\"u_m\"><subItem><value>{\"answer\":\"Yes, within 30 days.\",\"sources\":[{\"id\":\"p1\",\"title\":\"Return Policy\"}]}</value></subItem></item></systemTurn></session></recording>"
+				}
 			]`
 		return &http.Response{
 			StatusCode: http.StatusOK,
