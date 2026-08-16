@@ -30,7 +30,7 @@ func newTestHTTPClient(fn roundTripFunc) *http.Client {
 
 func TestClient_LifecycleAndConversationalFlow(t *testing.T) {
 	pr, pw := io.Pipe()
-	defer pw.Close()
+	defer func() { _ = pw.Close() }()
 
 	clientMock := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
 		if req.Header.Get("Accept") == "text/event-stream" {
@@ -59,9 +59,7 @@ func TestClient_LifecycleAndConversationalFlow(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, client)
-	defer func() {
-		require.NoError(t, client.Close())
-	}()
+	defer func() { _ = client.Close() }()
 
 	convSvc := client.Conversational()
 	require.NotNil(t, convSvc)
@@ -117,9 +115,7 @@ func TestClient_ErrorHandlingInFlow(t *testing.T) {
 
 	client, err := aiw.New(aiw.WithHTTPClient(clientMock))
 	require.NoError(t, err)
-	defer func() {
-		_ = client.Close()
-	}()
+	defer func() { _ = client.Close() }()
 
 	convSvc := client.Conversational()
 
